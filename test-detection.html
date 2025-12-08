@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEST - Detector de Dispositivo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 2rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #1a202c;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .info-box {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #3b82f6;
+            background: #eff6ff;
+        }
+        
+        .info-box.success {
+            border-left-color: #10b981;
+            background: #d1fae5;
+        }
+        
+        .info-box.warning {
+            border-left-color: #f59e0b;
+            background: #fef3c7;
+        }
+        
+        .info-box.danger {
+            border-left-color: #ef4444;
+            background: #fee2e2;
+        }
+        
+        .label {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 0.25rem;
+        }
+        
+        .value {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #1f2937;
+        }
+        
+        .result {
+            text-align: center;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .result.safe {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .result.watch {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+        
+        table {
+            width: 100%;
+            margin-top: 1rem;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 0.5rem;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        th {
+            background: #f3f4f6;
+            font-weight: 600;
+        }
+        
+        .yes {
+            color: #10b981;
+            font-weight: bold;
+        }
+        
+        .no {
+            color: #6b7280;
+        }
+        
+        @media (max-width: 450px) and (max-height: 450px) {
+            body {
+                padding: 0.5rem;
+                font-size: 12px;
+            }
+            
+            .container {
+                padding: 1rem;
+            }
+            
+            h1 {
+                font-size: 1rem;
+            }
+            
+            .value {
+                font-size: 1rem;
+            }
+            
+            .result {
+                font-size: 1rem;
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Test de Detección de Dispositivo</h1>
+        
+        <div class="info-box">
+            <div class="label">Resolución de Pantalla</div>
+            <div class="value" id="resolution">Cargando...</div>
+        </div>
+        
+        <div class="info-box">
+            <div class="label">Viewport</div>
+            <div class="value" id="viewport">Cargando...</div>
+        </div>
+        
+        <div class="info-box" id="widthCheck">
+            <div class="label">¿Ancho <= 450px?</div>
+            <div class="value" id="widthValue">Cargando...</div>
+        </div>
+        
+        <div class="info-box" id="heightCheck">
+            <div class="label">¿Alto <= 450px?</div>
+            <div class="value" id="heightValue">Cargando...</div>
+        </div>
+        
+        <div class="result" id="result">
+            Analizando...
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Dispositivo</th>
+                    <th>Resolución Típica</th>
+                    <th>¿Afectado?</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PC Desktop</td>
+                    <td>1920x1080</td>
+                    <td class="no">NO</td>
+                </tr>
+                <tr>
+                    <td>PC Laptop</td>
+                    <td>1366x768</td>
+                    <td class="no">NO</td>
+                </tr>
+                <tr>
+                    <td>Tablet</td>
+                    <td>768x1024</td>
+                    <td class="no">NO</td>
+                </tr>
+                <tr>
+                    <td>iPhone</td>
+                    <td>390x844</td>
+                    <td class="no">NO</td>
+                </tr>
+                <tr>
+                    <td>Android Móvil</td>
+                    <td>412x915</td>
+                    <td class="no">NO</td>
+                </tr>
+                <tr>
+                    <td>Galaxy Watch 4</td>
+                    <td>450x450</td>
+                    <td class="yes">SÍ ✓</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <script>
+        // Obtener info del dispositivo
+        const width = window.screen.width;
+        const height = window.screen.height;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Detectar si es smartwatch
+        const isSmartwatch = width <= 450 && height <= 450;
+        const widthOK = width <= 450;
+        const heightOK = height <= 450;
+        
+        // Actualizar UI
+        document.getElementById('resolution').textContent = `${width} x ${height} px`;
+        document.getElementById('viewport').textContent = `${viewportWidth} x ${viewportHeight} px`;
+        document.getElementById('widthValue').textContent = widthOK ? 'SÍ ✓' : 'NO ✗';
+        document.getElementById('heightValue').textContent = heightOK ? 'SÍ ✓' : 'NO ✗';
+        
+        // Colorear cajas
+        const widthBox = document.getElementById('widthCheck');
+        const heightBox = document.getElementById('heightCheck');
+        
+        if (widthOK) {
+            widthBox.classList.add('warning');
+        } else {
+            widthBox.classList.add('success');
+        }
+        
+        if (heightOK) {
+            heightBox.classList.add('warning');
+        } else {
+            heightBox.classList.add('success');
+        }
+        
+        // Resultado final
+        const resultDiv = document.getElementById('result');
+        
+        if (isSmartwatch) {
+            resultDiv.className = 'result watch';
+            resultDiv.innerHTML = `
+                ⌚ SMARTWATCH DETECTADO<br>
+                <small style="font-size: 0.8rem; font-weight: normal; margin-top: 0.5rem; display: block;">
+                    Los cambios SE APLICARÁN en este dispositivo.<br>
+                    Auto-skip del login activado.
+                </small>
+            `;
+        } else {
+            resultDiv.className = 'result safe';
+            resultDiv.innerHTML = `
+                ✅ DISPOSITIVO NORMAL<br>
+                <small style="font-size: 0.8rem; font-weight: normal; margin-top: 0.5rem; display: block;">
+                    Los cambios NO SE APLICARÁN.<br>
+                    Tu dispositivo funcionará exactamente igual que antes.
+                </small>
+            `;
+        }
+        
+        // Log en consola
+        console.log('=== TEST DE DETECCIÓN ===');
+        console.log(`Resolución: ${width}x${height}`);
+        console.log(`¿Ancho <= 450?: ${widthOK}`);
+        console.log(`¿Alto <= 450?: ${heightOK}`);
+        console.log(`¿Es smartwatch?: ${isSmartwatch}`);
+        console.log('========================');
+    </script>
+</body>
+</html>
