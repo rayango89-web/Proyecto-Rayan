@@ -1,14 +1,16 @@
 // SERVICE WORKER PARA RAYAN APP PWA
 console.log('[Service Worker] Iniciando...');
 
-// Nombre de cache
-const CACHE_NAME = 'rayan-app-v2';
-const BASE_PATH = '/rayan-app/';
+// Nombre de cache - cambiar versión para actualizar
+const CACHE_NAME = 'rayan-app-v3';
 
-// Archivos a cachear
+// Archivos a cachear (rutas relativas)
 const urlsToCache = [
-    BASE_PATH,
-    BASE_PATH + 'index.html'
+    './',
+    './index.html',
+    './manifest.json',
+    './icon-192.png',
+    './icon-512.png'
 ];
 
 // Instalación del service worker
@@ -20,7 +22,13 @@ self.addEventListener('install', (event) => {
                 console.log('[Service Worker] Cacheando archivos');
                 return cache.addAll(urlsToCache);
             })
-            .then(() => self.skipWaiting())
+            .then(() => {
+                console.log('[Service Worker] Instalado correctamente');
+                return self.skipWaiting();
+            })
+            .catch((error) => {
+                console.error('[Service Worker] Error al cachear:', error);
+            })
     );
 });
 
@@ -37,40 +45,54 @@ self.addEventListener('activate', (event) => {
                     }
                 })
             );
-        }).then(() => self.clients.claim())
+        }).then(() => {
+            console.log('[Service Worker] Activado correctamente');
+            return self.clients.claim();
+        })
     );
 });
 
 // Interceptar peticiones de red
 self.addEventListener('fetch', (event) => {
+    // Ignorar peticiones que no sean HTTP/HTTPS
+    if (!event.request.url.startsWith('http')) {
+        return;
+    }
+
     event.respondWith(
         caches.match(event.request)
             .then((response) => {
                 // Si está en cache, devolver cache
                 if (response) {
-                    console.log('[Service Worker] Sirviendo desde cache:', event.request.url);
                     return response;
                 }
+                
                 // Si no, buscar en red
                 return fetch(event.request)
                     .then((response) => {
-                        // Si la respuesta es válida, cachearla
-                        if (!response || response.status !== 200 || response.type !== 'basic') {
+                        // Si la respuesta no es válida, devolverla sin cachear
+                        if (!response || response.status !== 200) {
                             return response;
                         }
                         
+                        // Clonar la respuesta
                         const responseToCache = response.clone();
-                        caches.open(CACHE_NAME)
-                            .then((cache) => {
-                                cache.put(event.request, responseToCache);
-                            });
+                        
+                        // Cachear solo recursos de la misma app
+                        if (event.request.url.indexOf('http') === 0) {
+                            caches.open(CACHE_NAME)
+                                .then((cache) => {
+                                    cache.put(event.request, responseToCache);
+                                });
+                        }
                         
                         return response;
+                    })
+                    .catch((error) => {
+                        console.log('[Service Worker] Error de red:', error);
+                        // Intentar devolver página principal desde cache
+                        return caches.match('./index.html');
                     });
-            })
-            .catch(() => {
-                // Si falla todo, devolver página cacheada
-                return caches.match(BASE_PATH + 'index.html');
             })
     );
 });
