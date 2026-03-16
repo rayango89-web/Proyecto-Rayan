@@ -2,7 +2,7 @@
 console.log('[Service Worker] Iniciando...');
 
 // Nombre de cache - cambiar versión para actualizar
-const CACHE_NAME = 'rayan-app-v3';
+const CACHE_NAME = 'rayan-app-v4';
 
 // Archivos a cachear (rutas relativas)
 const urlsToCache = [
