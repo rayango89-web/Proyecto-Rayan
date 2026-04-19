@@ -4133,9 +4133,13 @@ return false;
 const handlePointerDown = function (ev) {
 ev.preventDefault();
 if (!currentPage) return;
-const isPenEraser = ev.pointerType === "pen" && (
-ev.button === 2 || ev.button === 5 ||
-(ev.buttons & 2) !== 0 || (ev.buttons & 32) !== 0
+const isPenEraser = (
+ev.pointerType === "eraser" ||
+(ev.pointerType === "pen" && (
+ev.button === 2 || ev.button === 5 || ev.button === 1 ||
+(ev.buttons & 2) !== 0 || (ev.buttons & 32) !== 0 ||
+(ev.buttons & 4) !== 0 || (ev.buttons & 16) !== 0
+))
 );
 const activeTool = isPenEraser ? "eraser" : props.tool;
 isDrawingRef.current = true;
@@ -4431,17 +4435,15 @@ cursor: "pointer",
 children: (props.pageIdx + 1) + " / " + notebook.pages.length,
 }),
 d.jsx("button", {
-onClick: props.onNextPage,
-disabled: props.pageIdx >= notebook.pages.length - 1,
+onClick: props.pageIdx < notebook.pages.length - 1 ? props.onNextPage : props.onAddPage,
 style: {
 width: 40, height: 40, borderRadius: 10, border: "none",
-background: props.pageIdx < notebook.pages.length - 1 ? "rgba(37,99,235,0.08)" : "transparent",
+background: "rgba(37,99,235,0.08)",
 display: "flex", alignItems: "center", justifyContent: "center",
-cursor: props.pageIdx < notebook.pages.length - 1 ? "pointer" : "default",
-opacity: props.pageIdx < notebook.pages.length - 1 ? 1 : 0.3,
-transform: "scaleX(-1)",
+cursor: "pointer",
+transform: props.pageIdx < notebook.pages.length - 1 ? "scaleX(-1)" : "none",
 },
-children: d.jsx(vh, { size: 16, color: "#475569" }),
+children: props.pageIdx < notebook.pages.length - 1 ? d.jsx(vh, { size: 16, color: "#475569" }) : d.jsx(pt, { size: 18, color: "#2563eb" }),
 }),
 ],
 }),
