@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mebistium-v32';
+const CACHE_NAME = 'mebistium-v1';
 
 const urlsToCache = [
   './',
@@ -8,7 +8,6 @@ const urlsToCache = [
   './icon-512.png',
   './index.js',
   './index.css',
-  './pdf.worker.min.mjs',
 ];
 
 self.addEventListener('install', (event) => {
