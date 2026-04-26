@@ -3463,9 +3463,12 @@ function MebistiumRadialMenu() {
 const navigate = gf();
 const { user, signOutUser } = ls();
 const [showCenterMenu, setShowCenterMenu] = b.useState(false);
-const [showAddModule, setShowAddModule] = b.useState(false);
-const [touchPos, setTouchPos] = b.useState(null);
+const [hoveredId, setHoveredId] = b.useState(null);
+const [rotation, setRotation] = b.useState(0);
 const containerRef = b.useRef(null);
+const dragStateRef = b.useRef(null);
+const autoRotateRef = b.useRef(0);
+const [centerPos, setCenterPos] = b.useState({ x: 0, y: 0 });
 const activeModules = [
 {
 id: "clases",
@@ -3484,54 +3487,107 @@ gradient: "linear-gradient(135deg, #10b981, #047857)",
 path: "/finanzas",
 },
 ];
-const futureModules = [
-{ id: "cocina", label: "Cocina", emoji: "🍳", color: "#f59e0b" },
-{ id: "casa", label: "Hogar", emoji: "🏠", color: "#8b5cf6" },
-{ id: "salud", label: "Salud", emoji: "💪", color: "#ef4444" },
-{ id: "viajes", label: "Viajes", emoji: "✈️", color: "#06b6d4" },
-{ id: "compras", label: "Compras", emoji: "🛒", color: "#ec4899" },
-{ id: "lectura", label: "Lectura", emoji: "📖", color: "#14b8a6" },
-{ id: "musica", label: "Música", emoji: "🎵", color: "#a855f7" },
-];
-const handleTouchMove = function (ev) {
+const ORBIT_RADIUS = 130;
+const BUBBLE_SIZE = 64;
+b.useEffect(function () {
+const updateCenter = function () {
 if (!containerRef.current) return;
 const rect = containerRef.current.getBoundingClientRect();
-const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
-const cy = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top;
-setTouchPos({ x: cx, y: cy });
+setCenterPos({ x: rect.width / 2, y: rect.height / 2 });
 };
-const handleTouchEnd = function () { setTouchPos(null); };
-const computeBubbleScale = function (bubbleScreenPos) {
-if (!touchPos) return 1;
-const dx = bubbleScreenPos.x - touchPos.x;
-const dy = bubbleScreenPos.y - touchPos.y;
-const dist = Math.sqrt(dx * dx + dy * dy);
-const maxDist = 220;
-if (dist > maxDist) return 0.85;
-const ratio = 1 - dist / maxDist;
-return 0.85 + 0.3 * ratio;
+updateCenter();
+window.addEventListener("resize", updateCenter);
+return function () { window.removeEventListener("resize", updateCenter); };
+}, []);
+b.useEffect(function () {
+let rafId;
+let lastTime = performance.now();
+const animate = function (now) {
+const dt = now - lastTime;
+lastTime = now;
+if (!dragStateRef.current) {
+autoRotateRef.current += dt * 0.005;
+setRotation(autoRotateRef.current);
+}
+rafId = requestAnimationFrame(animate);
+};
+rafId = requestAnimationFrame(animate);
+return function () { cancelAnimationFrame(rafId); };
+}, []);
+const computeBubblePos = function (idx, total) {
+const baseAngle = (360 / total) * idx - 90;
+const angleRad = ((baseAngle + rotation) * Math.PI) / 180;
+return {
+x: centerPos.x + Math.cos(angleRad) * ORBIT_RADIUS,
+y: centerPos.y + Math.sin(angleRad) * ORBIT_RADIUS,
+};
+};
+const handlePointerDown = function (ev) {
+if (!containerRef.current) return;
+const rect = containerRef.current.getBoundingClientRect();
+const startX = ev.clientX - rect.left;
+const startY = ev.clientY - rect.top;
+const dx = startX - centerPos.x;
+const dy = startY - centerPos.y;
+const startAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+dragStateRef.current = {
+startAngle: startAngle,
+startRotation: autoRotateRef.current,
+};
+};
+const handlePointerMove = function (ev) {
+if (!dragStateRef.current || !containerRef.current) return;
+ev.preventDefault();
+const rect = containerRef.current.getBoundingClientRect();
+const x = ev.clientX - rect.left;
+const y = ev.clientY - rect.top;
+const dx = x - centerPos.x;
+const dy = y - centerPos.y;
+const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+const delta = angle - dragStateRef.current.startAngle;
+autoRotateRef.current = dragStateRef.current.startRotation + delta;
+setRotation(autoRotateRef.current);
+};
+const handlePointerUp = function () {
+dragStateRef.current = null;
 };
 return d.jsxs("div", {
-ref: containerRef,
-onMouseMove: handleTouchMove,
-onMouseLeave: handleTouchEnd,
-onTouchMove: handleTouchMove,
-onTouchEnd: handleTouchEnd,
 style: {
 position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
 background: "linear-gradient(180deg, #f0f4ff 0%, #e0e7ff 50%, #c7d2fe 100%)",
 overflow: "hidden",
 display: "flex", flexDirection: "column",
 zIndex: 1,
+touchAction: "none",
 },
 children: [
-d.jsxs("div", {
+d.jsxs(Y.div, {
+initial: { opacity: 0, y: -20 },
+animate: { opacity: 1, y: 0 },
+transition: { delay: 0.2 },
+style: { paddingTop: 32, textAlign: "center", flexShrink: 0, pointerEvents: "none" },
+children: [
+d.jsx("h1", {
+style: {
+fontSize: 32, fontWeight: 700, color: "#0f172a",
+fontFamily: "'Instrument Serif', serif",
+letterSpacing: "-0.02em", margin: 0,
+},
+children: "Mebistium",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", marginTop: 4, fontWeight: 500 },
+children: "Selecciona un módulo",
+}),
+],
+}),
+d.jsx("div", {
 style: { position: "absolute", inset: 0, pointerEvents: "none" },
 children: [0, 1, 2, 3, 4, 5].map(function (i) {
 return d.jsx(Y.div, {
 initial: { opacity: 0 },
 animate: {
-opacity: [0, 0.4, 0],
+opacity: [0, 0.3, 0],
 y: [0, -50, -100],
 x: [0, (i % 2 === 0 ? 20 : -20)],
 },
@@ -3548,76 +3604,65 @@ background: i % 2 === 0 ? "#3b82f6" : "#10b981",
 }, i);
 }),
 }),
-d.jsxs(Y.div, {
-initial: { opacity: 0, y: -20 },
-animate: { opacity: 1, y: 0 },
-transition: { delay: 0.2 },
-style: { paddingTop: 32, textAlign: "center", flexShrink: 0 },
-children: [
-d.jsx("h1", {
-style: {
-fontSize: 32, fontWeight: 700, color: "#0f172a",
-fontFamily: "'Instrument Serif', serif",
-letterSpacing: "-0.02em", margin: 0,
-},
-children: "Mebistium",
-}),
-d.jsx("p", {
-style: { fontSize: 13, color: "#64748b", marginTop: 4, fontWeight: 500 },
-children: "Selecciona un módulo",
-}),
-],
-}),
 d.jsxs("div", {
+ref: containerRef,
+onPointerDown: handlePointerDown,
+onPointerMove: handlePointerMove,
+onPointerUp: handlePointerUp,
+onPointerCancel: handlePointerUp,
+onPointerLeave: handlePointerUp,
 style: {
 flex: 1, position: "relative",
-display: "flex", alignItems: "center", justifyContent: "center",
-minHeight: 280,
+minHeight: 360,
+touchAction: "none",
 },
 children: [
-d.jsxs("svg", {
+centerPos.x > 0 ? d.jsx("svg", {
 style: {
-position: "absolute", top: "50%", left: "50%",
-transform: "translate(-50%, -50%)",
-pointerEvents: "none", opacity: 0.18,
+position: "absolute",
+top: 0, left: 0,
+width: "100%", height: "100%",
+pointerEvents: "none",
+zIndex: 1,
 },
-width: 360, height: 360, viewBox: "0 0 360 360",
-children: [
-d.jsx("circle", { cx: 180, cy: 180, r: 130, fill: "none", stroke: "#2563eb", strokeWidth: 1, strokeDasharray: "3 6" }),
-d.jsx("circle", { cx: 180, cy: 180, r: 100, fill: "none", stroke: "#2563eb", strokeWidth: 1, strokeDasharray: "3 6" }),
-],
+children: activeModules.map(function (mod, idx) {
+const pos = computeBubblePos(idx, activeModules.length);
+return d.jsx("line", {
+x1: centerPos.x, y1: centerPos.y,
+x2: pos.x, y2: pos.y,
+stroke: mod.color,
+strokeWidth: 2,
+strokeOpacity: 0.55,
+strokeLinecap: "round",
+}, mod.id);
 }),
+}) : null,
 activeModules.map(function (mod, idx) {
-const total = activeModules.length;
-let angle;
-if (total === 1) angle = -90;
-else if (total === 2) angle = idx === 0 ? 180 : 0;
-else angle = -90 + (360 / total) * idx;
-const angleRad = (angle * Math.PI) / 180;
-const orbitRadius = 110;
-const offsetX = Math.cos(angleRad) * orbitRadius;
-const offsetY = Math.sin(angleRad) * orbitRadius;
-return d.jsx(BubbleModule, {
+const pos = computeBubblePos(idx, activeModules.length);
+return d.jsx(BubbleAtom, {
 key: mod.id,
 mod: mod,
-offsetX: offsetX, offsetY: offsetY,
-touchPos: touchPos,
-containerRef: containerRef,
-delay: 0.5 + idx * 0.12,
-onClick: function () { navigate(mod.path); },
-computeScale: computeBubbleScale,
+x: pos.x, y: pos.y,
+size: BUBBLE_SIZE,
+hovered: hoveredId === mod.id,
+onClick: function () {
+if (!dragStateRef.current) navigate(mod.path);
+},
+onHover: function (h) { setHoveredId(h ? mod.id : null); },
 });
 }),
-d.jsx(Y.button, {
+centerPos.x > 0 ? d.jsx(Y.button, {
 initial: { scale: 0, opacity: 0 },
 animate: { scale: 1, opacity: 1 },
 transition: { type: "spring", damping: 18, stiffness: 200, delay: 0.3 },
 whileTap: { scale: 0.92 },
-onClick: function () { setShowCenterMenu(true); },
+onClick: function (ev) {
+ev.stopPropagation();
+if (!dragStateRef.current) setShowCenterMenu(true);
+},
 style: {
 position: "absolute",
-top: "50%", left: "50%",
-marginLeft: -42, marginTop: -42,
+left: centerPos.x - 42, top: centerPos.y - 42,
 width: 84, height: 84,
 borderRadius: "50%",
 background: "linear-gradient(135deg, #1e293b, #0f172a)",
@@ -3636,89 +3681,14 @@ color: "white", fontStyle: "italic", lineHeight: 1,
 },
 children: "M",
 }),
-}),
-],
-}),
-d.jsxs(Y.div, {
-initial: { opacity: 0, y: 20 },
-animate: { opacity: 1, y: 0 },
-transition: { delay: 0.8 },
-style: {
-background: "rgba(255,255,255,0.6)",
-backdropFilter: "blur(20px)",
-borderTop: "1px solid rgba(37,99,235,0.1)",
-padding: "16px 20px",
-flexShrink: 0,
-},
-children: [
-d.jsxs("div", {
-style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-children: [
-d.jsx("p", {
-style: {
-fontSize: 11, fontWeight: 700,
-textTransform: "uppercase", letterSpacing: 0.5,
-color: "#64748b", margin: 0,
-},
-children: "Disponibles próximamente",
-}),
-d.jsxs("button", {
-onClick: function () { setShowAddModule(true); },
-style: {
-padding: "4px 10px",
-borderRadius: 8, border: "none",
-background: "rgba(37,99,235,0.1)",
-fontSize: 11, fontWeight: 600,
-color: "#2563eb", cursor: "pointer",
-display: "flex", alignItems: "center", gap: 4,
-},
-children: [d.jsx(pt, { size: 12 }), "Ver todos"],
-}),
-],
-}),
-d.jsx("div", {
-style: {
-display: "grid",
-gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))",
-gap: 8,
-maxWidth: 480, margin: "0 auto",
-},
-children: futureModules.slice(0, 4).map(function (mod) {
-return d.jsxs("div", {
-style: {
-display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-padding: 6, opacity: 0.6, cursor: "default",
-},
-children: [
-d.jsx("div", {
-style: {
-width: 44, height: 44, borderRadius: "50%",
-background: "rgba(255,255,255,0.7)",
-border: "2px dashed " + mod.color + "55",
-display: "flex", alignItems: "center", justifyContent: "center",
-fontSize: 20,
-},
-children: mod.emoji,
-}),
-d.jsx("span", {
-style: { fontSize: 9, fontWeight: 600, color: "#64748b", textAlign: "center" },
-children: mod.label,
-}),
-],
-}, mod.id);
-}),
-}),
+}) : null,
 ],
 }),
 user ? d.jsxs(Y.div, {
 initial: { opacity: 0 },
 animate: { opacity: 1 },
 transition: { delay: 1 },
-style: {
-padding: "8px 0 16px",
-textAlign: "center",
-flexShrink: 0,
-},
+style: { padding: "8px 0 24px", textAlign: "center", flexShrink: 0, pointerEvents: "none" },
 children: [
 d.jsx("p", {
 style: { fontSize: 10, color: "#94a3b8", fontWeight: 500, margin: 0 },
@@ -3731,78 +3701,80 @@ children: user.displayName || user.email,
 ],
 }) : null,
 showCenterMenu ? CenterMenuModal({
-user: user,
-navigate: navigate,
-signOutUser: signOutUser,
+user: user, navigate: navigate, signOutUser: signOutUser,
 onClose: function () { setShowCenterMenu(false); },
-}) : null,
-showAddModule ? AddModuleModal({
-modules: futureModules,
-onClose: function () { setShowAddModule(false); },
 }) : null,
 ],
 });
 }
-function BubbleModule(o) {
-const ref = b.useRef(null);
-const [scale, setScale] = b.useState(1);
-b.useEffect(function () {
-if (!ref.current || !o.containerRef.current || !o.touchPos) {
-setScale(1);
-return;
-}
-const r = ref.current.getBoundingClientRect();
-const cr = o.containerRef.current.getBoundingClientRect();
-const bubbleScreenPos = {
-x: r.left - cr.left + r.width / 2,
-y: r.top - cr.top + r.height / 2,
-};
-setScale(o.computeScale(bubbleScreenPos));
-}, [o.touchPos]);
-return d.jsxs(Y.button, {
-ref: ref,
+function BubbleAtom(o) {
+return d.jsxs(Y.div, {
 initial: { scale: 0, opacity: 0 },
-animate: { scale: scale, opacity: 1 },
-transition: { type: "spring", damping: 16, stiffness: 180, delay: o.delay },
-whileTap: { scale: scale * 0.92 },
-onClick: o.onClick,
+animate: { scale: 1, opacity: 1 },
+transition: { type: "spring", damping: 16, stiffness: 180, delay: 0.4 },
 style: {
 position: "absolute",
-top: "50%", left: "50%",
-width: 96, height: 96,
-marginLeft: o.offsetX - 48,
-marginTop: o.offsetY - 48,
-borderRadius: "50%",
-background: o.mod.gradient,
-border: "3px solid rgba(255,255,255,0.95)",
-boxShadow: "0 12px 32px " + o.mod.color + "55, 0 4px 12px rgba(0,0,0,0.15)",
-cursor: "pointer", padding: 0,
-display: "flex", flexDirection: "column",
-alignItems: "center", justifyContent: "center",
-gap: 2,
-overflow: "hidden",
+left: o.x - o.size / 2,
+top: o.y - o.size / 2,
+width: o.size, height: o.size,
 zIndex: 4,
 },
 children: [
+d.jsx(Y.button, {
+onPointerEnter: function () { o.onHover(true); },
+onPointerLeave: function () { o.onHover(false); },
+onClick: o.onClick,
+whileHover: { scale: 1.12 },
+whileTap: { scale: 0.92 },
+style: {
+width: o.size, height: o.size,
+borderRadius: "50%",
+background: o.mod.gradient,
+border: "3px solid rgba(255,255,255,0.95)",
+boxShadow: "0 8px 24px " + o.mod.color + "55, 0 2px 8px rgba(0,0,0,0.12)",
+cursor: "pointer", padding: 0,
+display: "flex", alignItems: "center", justifyContent: "center",
+overflow: "hidden",
+position: "relative",
+},
+children: d.jsxs(d.Fragment, {
+children: [
 d.jsx("div", {
 style: {
-position: "absolute", top: -20, right: -20,
-width: 60, height: 60, borderRadius: "50%",
+position: "absolute", top: -16, right: -16,
+width: 40, height: 40, borderRadius: "50%",
 background: "rgba(255,255,255,0.2)",
 },
 }),
 d.jsx(o.mod.icon, {
-size: 30, color: "white", strokeWidth: 2.2,
+size: Math.round(o.size * 0.42),
+color: "white",
+strokeWidth: 2.2,
+style: { position: "relative", zIndex: 1 },
 }),
-d.jsx("span", {
+],
+}),
+}),
+o.hovered ? d.jsx(Y.div, {
+initial: { opacity: 0, y: -4 },
+animate: { opacity: 1, y: 0 },
 style: {
-fontSize: 11, fontWeight: 700,
-color: "white", letterSpacing: 0.3,
-textTransform: "uppercase",
-position: "relative",
+position: "absolute",
+top: o.size + 8,
+left: "50%",
+transform: "translateX(-50%)",
+background: "rgba(15,23,42,0.92)",
+color: "white",
+padding: "4px 10px",
+borderRadius: 8,
+fontSize: 11,
+fontWeight: 600,
+whiteSpace: "nowrap",
+pointerEvents: "none",
+letterSpacing: 0.3,
 },
 children: o.mod.label,
-}),
+}) : null,
 ],
 });
 }
@@ -3822,8 +3794,7 @@ backdropFilter: "blur(8px)",
 display: "flex", alignItems: "center", justifyContent: "center",
 zIndex: 100, padding: 16,
 },
-children: [
-d.jsxs(Y.div, {
+children: d.jsxs(Y.div, {
 onClick: function (e) { e.stopPropagation(); },
 initial: { scale: 0.85, opacity: 0 },
 animate: { scale: 1, opacity: 1 },
@@ -3908,94 +3879,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v1.0",
-}),
-],
-}),
-],
-});
-}
-function AddModuleModal(o) {
-return d.jsxs("div", {
-onClick: o.onClose,
-style: {
-position: "fixed", inset: 0,
-background: "rgba(15,23,42,0.7)",
-backdropFilter: "blur(8px)",
-display: "flex", alignItems: "center", justifyContent: "center",
-zIndex: 100, padding: 16,
-},
-children: d.jsxs(Y.div, {
-onClick: function (e) { e.stopPropagation(); },
-initial: { scale: 0.85, opacity: 0 },
-animate: { scale: 1, opacity: 1 },
-transition: { type: "spring", damping: 22, stiffness: 280 },
-style: {
-background: "rgba(255,255,255,0.98)",
-borderRadius: 24, padding: 24,
-maxWidth: 360, width: "100%",
-boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
-},
-children: [
-d.jsxs("div", {
-style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-children: [
-d.jsx("h2", {
-style: { fontSize: 18, fontWeight: 700, color: "#0f172a", margin: 0 },
-children: "Añadir módulo",
-}),
-d.jsx("button", {
-onClick: o.onClose,
-style: {
-width: 32, height: 32, borderRadius: 10, border: "none",
-background: "rgba(0,0,0,0.05)", cursor: "pointer",
-display: "flex", alignItems: "center", justifyContent: "center",
-},
-children: d.jsx(er, { size: 16, color: "#64748b" }),
-}),
-],
-}),
-d.jsx("p", {
-style: { fontSize: 12, color: "#64748b", marginBottom: 16, lineHeight: 1.5 },
-children: "Estos módulos estarán disponibles próximamente. Pulsa cualquiera para sugerirlo como prioritario.",
-}),
-d.jsx("div", {
-style: {
-display: "grid",
-gridTemplateColumns: "repeat(3, 1fr)",
-gap: 10,
-},
-children: o.modules.map(function (mod) {
-return d.jsxs("button", {
-onClick: function () {
-alert("Pronto disponible: " + mod.label);
-},
-style: {
-padding: 12, border: "none",
-background: "rgba(255,255,255,0.6)",
-borderRadius: 14,
-display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
-cursor: "pointer",
-transition: "transform 0.15s, background 0.15s",
-},
-children: [
-d.jsx("div", {
-style: {
-width: 48, height: 48, borderRadius: "50%",
-background: "linear-gradient(135deg, " + mod.color + "33, " + mod.color + "11)",
-border: "2px solid " + mod.color + "44",
-display: "flex", alignItems: "center", justifyContent: "center",
-fontSize: 22,
-},
-children: mod.emoji,
-}),
-d.jsx("span", {
-style: { fontSize: 11, fontWeight: 600, color: "#475569", textAlign: "center" },
-children: mod.label,
-}),
-],
-}, mod.id);
-}),
+children: "v2.0",
 }),
 ],
 }),
