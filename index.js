@@ -3636,18 +3636,12 @@ style: {
 minHeight: "100vh",
 display: "flex", flexDirection: "column",
 paddingBottom: 80,
-background: "linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%)",
-boxSizing: "border-box",
 width: "100%",
-maxWidth: "100vw",
-overflow: "hidden",
 },
 children: [
 d.jsx("div", {
+className: "max-w-lg mx-auto px-5 py-5",
 style: {
-maxWidth: 520,
-margin: "0 auto",
-padding: "20px 16px",
 width: "100%",
 flex: 1,
 boxSizing: "border-box",
@@ -3815,12 +3809,11 @@ d.jsxs(Y.div, {
 initial: { opacity: 0, y: 12 },
 animate: { opacity: 1, y: 0 },
 transition: { delay: 0.05 },
+className: "glass-card",
 style: {
 padding: 20, textAlign: "center",
 background: "linear-gradient(135deg, #10b98122, #04785708)",
 borderLeft: "3px solid #059669",
-borderRadius: 16,
-boxShadow: "0 4px 20px rgba(0,0,0,0.04)",
 boxSizing: "border-box",
 },
 children: [
@@ -3910,16 +3903,14 @@ d.jsx("p", { style: { fontSize: 13, fontWeight: 700, margin: 0 }, children: "Sac
 o.isLoading && o.transactions.length === 0 ? d.jsx("div", {
 style: {
 padding: 28, textAlign: "center",
-background: "rgba(255,255,255,0.6)",
 borderRadius: 16,
 boxSizing: "border-box",
 },
 children: d.jsx("p", { style: { fontSize: 13, color: "#94a3b8" }, children: "Cargando movimientos..." }),
 }) : o.transactions.length === 0 ? d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 28, textAlign: "center",
-background: "rgba(255,255,255,0.6)",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -3933,11 +3924,9 @@ d.jsx("p", { style: { fontSize: 11, color: "#94a3b8" }, children: "Pulsa Meter o
 }) : d.jsxs(d.Fragment, {
 children: [
 d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 14,
-background: "rgba(255,255,255,0.7)",
-backdropFilter: "blur(10px)",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -3991,11 +3980,9 @@ formatAmountES(monthSavingCents), " ", symbol,
 ],
 }),
 d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 14,
-background: "rgba(255,255,255,0.7)",
-backdropFilter: "blur(10px)",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -4385,11 +4372,11 @@ d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, child
 ],
 }),
 d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 24, textAlign: "center",
 background: "linear-gradient(135deg,#10b98122,#04785708)",
 borderLeft: "3px solid #059669",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -4517,11 +4504,9 @@ d.jsx("p", { style: { fontSize: 13, color: "#64748b" }, children: "No hay movimi
 ],
 }) : dates.map(function (date) {
 return d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 14,
-background: "rgba(255,255,255,0.7)",
-backdropFilter: "blur(10px)",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -4562,11 +4547,11 @@ d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, child
 ],
 }),
 d.jsxs("div", {
+className: "glass-card",
 style: {
 padding: 24, textAlign: "center",
 background: "linear-gradient(135deg,#10b98122,#04785708)",
 borderLeft: "3px solid #059669",
-borderRadius: 16,
 boxSizing: "border-box",
 },
 children: [
@@ -4608,11 +4593,10 @@ d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, child
 ],
 }),
 d.jsxs("div", {
+className: "glass-card",
 style: {
-background: "rgba(255,255,255,0.7)",
-backdropFilter: "blur(10px)",
-borderRadius: 16,
 overflow: "hidden",
+padding: 0,
 },
 children: [
 MoreItem({
@@ -7087,4 +7071,4 @@ children: pg.strokes.length,
     .border-primary { border-color: ${t.primary} !important; }
     .progress-fill { background: linear-gradient(135deg, ${t.primary}, ${t.secondary}) !important; }
     .gradient-text { background-image: linear-gradient(135deg, ${t.primary}, ${t.secondary}) !important; }
-  `,document.head.appendChild(e),localStorage.setItem("rayan-theme",t.name)}function vH(t){const e=Zk.find(n=>n.name===t);e&&eN(e)}const xH={hidden:{opacity:0},show:{opacity:1,transition:{staggerChildren:.06}}},FE={hidden:{opacity:0,y:16},show:{opacity:1,y:0,transition:{duration:.5,ease:[.22,1,.36,1]}}};function wH(){const[t,e]=b.useState(localStorage.getItem("rayan-theme")||"Por Defecto"),n=r=>{e(r.name),eN(r)};return d.jsxs(Y.div,{variants:xH,initial:"hidden",animate:"show",className:"space-y-6",children:[d.jsxs(Y.div,{variants:FE,children:[d.jsx("h1",{className:"page-header",children:"Temas"}),d.jsx("p",{className:"page-subtitle",children:"Personaliza los colores de tu app"})]}),d.jsxs(Y.div,{variants:FE,children:[d.jsx("p",{className:"section-label mb-3",children:"🎨 Temas Predefinidos"}),d.jsx("div",{className:"grid grid-cols-2 gap-2.5",children:Zk.map(r=>d.jsxs("button",{onClick:()=>n(r),className:`glass-card p-4 text-left relative transition-all ${t===r.name?"ring-2 ring-offset-1":""}`,children:[t===r.name&&d.jsx("div",{className:"absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center",style:{background:r.primary},children:d.jsx(H5,{className:"w-3 h-3 text-white"})}),d.jsxs("div",{className:"flex gap-1.5 mb-2",children:[d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.primary}}),d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.secondary}}),d.jsx("div",{className:"w-5 h-5 rounded-full border border-black/10",style:{background:`hsl(${r.bg})`}})]}),d.jsx("p",{className:"text-sm font-medium text-foreground",children:r.name}),t===r.name&&d.jsx("p",{className:"text-[10px] text-muted-foreground mt-0.5",children:"✓ Activo"})]},r.name))})]})]})}const _H=()=>{const t=ru();return b.useEffect(()=>{console.error("404 Error: User attempted to access non-existent route:",t.pathname)},[t.pathname]),d.jsx("div",{className:"flex min-h-screen items-center justify-center bg-muted",children:d.jsxs("div",{className:"text-center",children:[d.jsx("h1",{className:"mb-4 text-4xl font-bold",children:"404"}),d.jsx("p",{className:"mb-4 text-xl text-muted-foreground",children:"Oops! Page not found"}),d.jsx("a",{href:"/",className:"text-primary underline hover:text-primary/90",children:"Return to Home"})]})})},bH=new fD;function EH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):t?d.jsx(IW,{}):d.jsx(PC,{to:"/",replace:!0})}function TH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):d.jsxs(oM,{children:[d.jsx(xt,{path:"/",element:t?d.jsx(MebistiumRadialMenu,{}):d.jsx(AW,{})}),d.jsxs(xt,{element:d.jsx(EH,{}),children:[d.jsx(xt,{path:"/dashboard",element:d.jsx(NW,{})}),d.jsx(xt,{path:"/tasks",element:d.jsx(DW,{})}),d.jsx(xt,{path:"/schedule",element:d.jsx(OW,{})}),d.jsx(xt,{path:"/calendar",element:d.jsx(UW,{})}),d.jsx(xt,{path:"/grades",element:d.jsx($W,{})}),d.jsx(xt,{path:"/courses",element:d.jsx(BW,{})}),d.jsx(xt,{path:"/organizer",element:d.jsx(WW,{})}),d.jsx(xt,{path:"/settings",element:d.jsx(GW,{})}),d.jsx(xt,{path:"/classroom",element:d.jsx(lH,{})}),d.jsx(xt,{path:"/notes",element:d.jsx(XW,{})}),d.jsx(xt,{path:"/selectividad",element:d.jsx(fH,{})}),d.jsx(xt,{path:"/pizarra",element:d.jsx(pH,{})}),d.jsx(xt,{path:"/compartir",element:d.jsx(gH,{})}),d.jsx(xt,{path:"/temas",element:d.jsx(wH,{})}),d.jsx(xt,{path:"/finanzas",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/movimientos",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/stats",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/mas",element:d.jsx(FinanceModule,{})})]}),d.jsx(xt,{path:"*",element:d.jsx(_H,{})})]})}const SH=()=>d.jsx(mD,{client:bH,children:d.jsx(Z8,{children:d.jsx(e$,{children:d.jsxs($4,{children:[d.jsx(nO,{}),d.jsx($M,{}),d.jsx(cM,{children:d.jsx(TH,{})})]})})})}),UE=localStorage.getItem("rayan-theme");UE&&vH(UE);uC(document.getElementById("root")).render(d.jsx(SH,{}));
+  `,document.head.appendChild(e),localStorage.setItem("rayan-theme",t.name)}function vH(t){const e=Zk.find(n=>n.name===t);e&&eN(e)}const xH={hidden:{opacity:0},show:{opacity:1,transition:{staggerChildren:.06}}},FE={hidden:{opacity:0,y:16},show:{opacity:1,y:0,transition:{duration:.5,ease:[.22,1,.36,1]}}};function wH(){const[t,e]=b.useState(localStorage.getItem("rayan-theme")||"Por Defecto"),n=r=>{e(r.name),eN(r)};return d.jsxs(Y.div,{variants:xH,initial:"hidden",animate:"show",className:"space-y-6",children:[d.jsxs(Y.div,{variants:FE,children:[d.jsx("h1",{className:"page-header",children:"Temas"}),d.jsx("p",{className:"page-subtitle",children:"Personaliza los colores de tu app"})]}),d.jsxs(Y.div,{variants:FE,children:[d.jsx("p",{className:"section-label mb-3",children:"🎨 Temas Predefinidos"}),d.jsx("div",{className:"grid grid-cols-2 gap-2.5",children:Zk.map(r=>d.jsxs("button",{onClick:()=>n(r),className:`glass-card p-4 text-left relative transition-all ${t===r.name?"ring-2 ring-offset-1":""}`,children:[t===r.name&&d.jsx("div",{className:"absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center",style:{background:r.primary},children:d.jsx(H5,{className:"w-3 h-3 text-white"})}),d.jsxs("div",{className:"flex gap-1.5 mb-2",children:[d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.primary}}),d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.secondary}}),d.jsx("div",{className:"w-5 h-5 rounded-full border border-black/10",style:{background:`hsl(${r.bg})`}})]}),d.jsx("p",{className:"text-sm font-medium text-foreground",children:r.name}),t===r.name&&d.jsx("p",{className:"text-[10px] text-muted-foreground mt-0.5",children:"✓ Activo"})]},r.name))})]})]})}const _H=()=>{const t=ru();return b.useEffect(()=>{console.error("404 Error: User attempted to access non-existent route:",t.pathname)},[t.pathname]),d.jsx("div",{className:"flex min-h-screen items-center justify-center bg-muted",children:d.jsxs("div",{className:"text-center",children:[d.jsx("h1",{className:"mb-4 text-4xl font-bold",children:"404"}),d.jsx("p",{className:"mb-4 text-xl text-muted-foreground",children:"Oops! Page not found"}),d.jsx("a",{href:"/",className:"text-primary underline hover:text-primary/90",children:"Return to Home"})]})})},bH=new fD;function EH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):t?d.jsx(IW,{}):d.jsx(PC,{to:"/",replace:!0})}function TH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):d.jsxs(oM,{children:[d.jsx(xt,{path:"/",element:t?d.jsx(MebistiumRadialMenu,{}):d.jsx(AW,{})}),d.jsxs(xt,{element:d.jsx(EH,{}),children:[d.jsx(xt,{path:"/dashboard",element:d.jsx(NW,{})}),d.jsx(xt,{path:"/tasks",element:d.jsx(DW,{})}),d.jsx(xt,{path:"/schedule",element:d.jsx(OW,{})}),d.jsx(xt,{path:"/calendar",element:d.jsx(UW,{})}),d.jsx(xt,{path:"/grades",element:d.jsx($W,{})}),d.jsx(xt,{path:"/courses",element:d.jsx(BW,{})}),d.jsx(xt,{path:"/organizer",element:d.jsx(WW,{})}),d.jsx(xt,{path:"/settings",element:d.jsx(GW,{})}),d.jsx(xt,{path:"/classroom",element:d.jsx(lH,{})}),d.jsx(xt,{path:"/notes",element:d.jsx(XW,{})}),d.jsx(xt,{path:"/selectividad",element:d.jsx(fH,{})}),d.jsx(xt,{path:"/pizarra",element:d.jsx(pH,{})}),d.jsx(xt,{path:"/compartir",element:d.jsx(gH,{})}),d.jsx(xt,{path:"/temas",element:d.jsx(wH,{})}),d.jsx(xt,{path:"/finanzas",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/movimientos",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/sobres",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/stats",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/mas",element:d.jsx(FinanceModule,{})})]}),d.jsx(xt,{path:"*",element:d.jsx(_H,{})})]})}const SH=()=>d.jsx(mD,{client:bH,children:d.jsx(Z8,{children:d.jsx(e$,{children:d.jsxs($4,{children:[d.jsx(nO,{}),d.jsx($M,{}),d.jsx(cM,{children:d.jsx(TH,{})})]})})})}),UE=localStorage.getItem("rayan-theme");UE&&vH(UE);uC(document.getElementById("root")).render(d.jsx(SH,{}));
