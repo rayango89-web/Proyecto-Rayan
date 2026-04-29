@@ -3617,7 +3617,7 @@ onAdd: function (type) { setShowAddModal(type); },
 isLoading: !hasLoadedFromFirestore,
 });
 } else if (path === "/finanzas/sobres") {
-content = d.jsx(FinanceSobresPlaceholder, {});
+content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency });
 } else if (path === "/finanzas/stats") {
 content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency });
 } else if (path === "/finanzas/mas") {
@@ -4346,6 +4346,726 @@ boxShadow: "0 6px 20px " + (isIncome ? "rgba(5,150,105,0.3)" : "rgba(220,38,38,0
 boxSizing: "border-box",
 },
 children: "Guardar movimiento",
+}),
+}),
+],
+}),
+});
+}
+function FinanceSobresPage(o) {
+const { user } = ls();
+const _uid = user ? user.uid : null;
+const [envelopes, setEnvelopes] = b.useState([]);
+const [loaded, setLoaded] = b.useState(false);
+const [showCreate, setShowCreate] = b.useState(false);
+const [editingEnv, setEditingEnv] = b.useState(null);
+b.useEffect(function () {
+if (!_uid) return;
+let unsub;
+try {
+unsub = Al(_uid, "finance_envelopes", function (envs) {
+try {
+if (Array.isArray(envs)) {
+setEnvelopes(envs);
+setLoaded(true);
+}
+} catch (inner) { console.error("env sub:", inner); }
+});
+} catch (e) { console.error("env sub err:", e); }
+return function () { if (unsub) try { unsub(); } catch (e) {} };
+}, [_uid]);
+const saveEnvelope = function (env) {
+if (!_uid) {
+alert("Debes iniciar sesión para guardar sobres");
+return;
+}
+const newEnv = Object.assign({
+id: env.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+createdAt: env.createdAt || Date.now(),
+}, env);
+if (newEnv.isBuffer) {
+envelopes.forEach(function (e) {
+if (e.id !== newEnv.id && e.isBuffer) {
+try { Cl(_uid, "finance_envelopes", Object.assign({}, e, { isBuffer: false })); } catch (err) {}
+}
+});
+}
+try {
+Cl(_uid, "finance_envelopes", newEnv);
+} catch (e) {
+console.error("Error guardando sobre:", e);
+alert("Error al guardar el sobre");
+return;
+}
+setShowCreate(false);
+setEditingEnv(null);
+};
+const deleteEnvelope = function (id) {
+if (!confirm("¿Eliminar este sobre?")) return;
+if (!_uid) return;
+try {
+Il(_uid, "finance_envelopes", id);
+} catch (e) { console.error("Error borrando sobre:", e); }
+};
+const calculateSpent = function (envelope, transactions) {
+if (!transactions) return 0;
+const now = new Date();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+let total = 0;
+transactions.forEach(function (tx) {
+if (tx.type === "expense" && tx.categoryId === envelope.categoryId && tx.date && tx.date.startsWith(curMonth)) {
+total += tx.amountCents;
+}
+});
+return total;
+};
+const totalAssigned = envelopes.reduce(function (acc, e) { return acc + (e.monthlyAmountCents || 0); }, 0);
+const transactions = o.transactions || [];
+return d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 14 },
+children: [
+d.jsxs(Y.div, {
+initial: { opacity: 0, y: -8 },
+animate: { opacity: 1, y: 0 },
+children: [
+d.jsx("h1", {
+style: {
+fontSize: 26, fontWeight: 700, color: "#0f172a", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: "Sobres",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" },
+children: envelopes.length === 0
+? "Reparte tu dinero en sobres por categoría"
+: "Total asignado: " + formatAmountES(totalAssigned) + " " + getCurrencySymbol(o.currency) + " / mes",
+}),
+],
+}),
+d.jsxs("button", {
+onClick: function () { setShowCreate(true); },
+style: {
+padding: "12px 14px", borderRadius: 12, border: "2px dashed #059669",
+background: "rgba(5,150,105,0.06)",
+color: "#059669", cursor: "pointer", fontSize: 13, fontWeight: 700,
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+width: "100%", boxSizing: "border-box",
+},
+children: [
+MIcon({ path: ICONS.plus, size: 16, color: "#059669" }),
+envelopes.length === 0 ? "Crear tu primer sobre" : "Crear sobre",
+],
+}),
+!loaded ? d.jsx("div", {
+className: "glass-card",
+style: { padding: 28, textAlign: "center" },
+children: d.jsx("p", { style: { fontSize: 13, color: "#94a3b8" }, children: "Cargando sobres..." }),
+}) : envelopes.length === 0 ? d.jsxs("div", {
+className: "glass-card",
+style: { padding: 24, textAlign: "center", boxSizing: "border-box" },
+children: [
+d.jsx("div", {
+style: {
+width: 56, height: 56, borderRadius: "50%",
+background: "rgba(5,150,105,0.1)",
+margin: "0 auto 12px",
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: MIcon({ path: ICONS.package, size: 28, color: "#059669" }),
+}),
+d.jsx("h2", {
+style: { fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 8 },
+children: "Aún no tienes sobres",
+}),
+d.jsx("p", {
+style: { fontSize: 12, color: "#64748b", lineHeight: 1.5, marginBottom: 12 },
+children: "Los sobres te ayudan a organizar tu dinero por categorías. Por ejemplo: 50€ para Comida, 30€ para Ocio…",
+}),
+d.jsxs("div", {
+style: {
+textAlign: "left", padding: 14, marginTop: 8,
+background: "rgba(5,150,105,0.04)", borderRadius: 10,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, color: "#059669",
+marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5,
+},
+children: "Próximas funciones",
+}),
+d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v9: cuando gastes en una categoría, descontará del sobre" }),
+d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v10: sobre amortiguador + suscripciones recurrentes" }),
+d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v11: aviso día 1 con reparto automático" }),
+],
+}),
+],
+}) : d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 10 },
+children: envelopes
+.slice()
+.sort(function (a, bb) {
+if (a.isBuffer && !bb.isBuffer) return 1;
+if (!a.isBuffer && bb.isBuffer) return -1;
+return (bb.monthlyAmountCents || 0) - (a.monthlyAmountCents || 0);
+})
+.map(function (env) {
+const spent = calculateSpent(env, transactions);
+return EnvelopeCard({
+key: env.id,
+envelope: env,
+spentCents: spent,
+currency: o.currency,
+onEdit: function () { setEditingEnv(env); },
+onDelete: function () { deleteEnvelope(env.id); },
+});
+}),
+}),
+envelopes.length > 0 ? d.jsxs("div", {
+className: "glass-card",
+style: { padding: 14, boxSizing: "border-box" },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 6 },
+children: [
+MIcon({ path: ICONS.info || ICONS.other_exp, size: 14, color: "#059669" }),
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, color: "#059669",
+textTransform: "uppercase", letterSpacing: 0.5, margin: 0,
+},
+children: "Cómo funciona",
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: 0 },
+children: "Por ahora los sobres son sólo informativos. En la próxima versión, cuando saques dinero en una categoría se descontará automáticamente del sobre correspondiente.",
+}),
+],
+}) : null,
+showCreate ? d.jsx(EnvelopeModal, {
+currency: o.currency,
+existingEnvelopes: envelopes,
+onClose: function () { setShowCreate(false); },
+onSave: saveEnvelope,
+}) : null,
+editingEnv ? d.jsx(EnvelopeModal, {
+currency: o.currency,
+envelope: editingEnv,
+existingEnvelopes: envelopes,
+onClose: function () { setEditingEnv(null); },
+onSave: saveEnvelope,
+onDelete: function () { deleteEnvelope(editingEnv.id); setEditingEnv(null); },
+}) : null,
+],
+});
+}
+function EnvelopeCard(o) {
+const env = o.envelope;
+const cat = getCategoryById(env.categoryId);
+const symbol = getCurrencySymbol(o.currency);
+const assigned = env.monthlyAmountCents || 0;
+const spent = o.spentCents || 0;
+const remaining = assigned - spent;
+const pct = assigned > 0 ? Math.min(100, (spent / assigned) * 100) : 0;
+const overspent = spent > assigned;
+const isBuffer = env.isBuffer;
+let progressColor = cat.color;
+if (pct >= 90) progressColor = "#dc2626";
+else if (pct >= 70) progressColor = "#ea580c";
+return d.jsxs(Y.button, {
+key: env.id,
+onClick: o.onEdit,
+whileTap: { scale: 0.98 },
+initial: { opacity: 0, y: 6 },
+animate: { opacity: 1, y: 0 },
+className: "glass-card",
+style: {
+padding: 14,
+border: "none",
+cursor: "pointer",
+textAlign: "left",
+width: "100%",
+boxSizing: "border-box",
+borderLeft: "3px solid " + cat.color,
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 8 },
+children: [
+d.jsx("div", {
+style: {
+width: 38, height: 38, borderRadius: 11,
+background: cat.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({
+path: ICONS[cat.iconKey] || ICONS.other_exp,
+size: 19, color: cat.color,
+}),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 6 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 14, fontWeight: 700, color: "#0f172a",
+margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+},
+children: env.name || cat.name,
+}),
+isBuffer ? d.jsx("span", {
+style: {
+fontSize: 9, fontWeight: 700,
+color: "#059669",
+background: "rgba(5,150,105,0.12)",
+padding: "2px 6px", borderRadius: 6,
+textTransform: "uppercase", letterSpacing: 0.3,
+},
+children: "Amortiguador",
+}) : null,
+],
+}),
+d.jsxs("p", {
+style: { fontSize: 11, color: "#94a3b8", margin: "2px 0 0" },
+children: [cat.name, " · ", env.accumulate !== false ? "Acumula sobrante" : "No acumula"],
+}),
+],
+}),
+d.jsxs("div", {
+style: { textAlign: "right", flexShrink: 0 },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 14, fontWeight: 700,
+color: overspent ? "#dc2626" : "#0f172a",
+margin: 0,
+},
+children: [formatAmountES(assigned), " ", symbol],
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: "/ mes",
+}),
+],
+}),
+],
+}),
+d.jsx("div", {
+style: {
+height: 8, background: "rgba(0,0,0,0.05)", borderRadius: 4,
+overflow: "hidden", marginBottom: 6,
+},
+children: d.jsx("div", {
+style: {
+height: "100%",
+width: pct + "%",
+background: progressColor,
+borderRadius: 4,
+transition: "width 0.3s",
+},
+}),
+}),
+d.jsxs("div", {
+style: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+children: [
+d.jsxs("p", {
+style: { fontSize: 11, color: "#64748b", margin: 0 },
+children: [
+"Gastado: ",
+d.jsxs("span", {
+style: { fontWeight: 600, color: overspent ? "#dc2626" : "#475569" },
+children: [formatAmountES(spent), " ", symbol],
+}),
+],
+}),
+d.jsxs("p", {
+style: {
+fontSize: 11, fontWeight: 600,
+color: overspent ? "#dc2626" : remaining < assigned * 0.2 ? "#ea580c" : "#059669",
+margin: 0,
+},
+children: overspent
+? ["Excedido " + formatAmountES(spent - assigned) + " " + symbol]
+: ["Quedan " + formatAmountES(remaining) + " " + symbol],
+}),
+],
+}),
+],
+});
+}
+function EnvelopeModal(o) {
+const isEdit = !!o.envelope;
+const [name, setName] = b.useState(o.envelope ? (o.envelope.name || "") : "");
+const [categoryId, setCategoryId] = b.useState(o.envelope ? o.envelope.categoryId : EXPENSE_CATEGORIES[0].id);
+const [amount, setAmount] = b.useState(function () {
+if (!o.envelope) return "";
+const cents = o.envelope.monthlyAmountCents || 0;
+return formatAmountES(cents).replace(",00", "");
+});
+const [isBuffer, setIsBuffer] = b.useState(o.envelope ? !!o.envelope.isBuffer : false);
+const [accumulate, setAccumulate] = b.useState(o.envelope ? o.envelope.accumulate !== false : true);
+const symbol = getCurrencySymbol(o.currency);
+const handleSave = function () {
+const cleaned = amount.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+if (!num || num <= 0) {
+alert("Introduce un importe mensual válido");
+return;
+}
+const cents = Math.round(num * 100);
+if (!isEdit) {
+const dup = (o.existingEnvelopes || []).find(function (e) { return e.categoryId === categoryId; });
+if (dup) {
+alert("Ya tienes un sobre para la categoría \"" + getCategoryById(categoryId).name + "\". Edita el existente.");
+return;
+}
+}
+o.onSave({
+id: o.envelope ? o.envelope.id : undefined,
+createdAt: o.envelope ? o.envelope.createdAt : undefined,
+name: name.trim() || getCategoryById(categoryId).name,
+categoryId: categoryId,
+monthlyAmountCents: cents,
+isBuffer: isBuffer,
+accumulate: accumulate,
+});
+};
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "flex-end", justifyContent: "center",
+zIndex: 100,
+},
+children: d.jsxs(Y.div, {
+onClick: function (e) { e.stopPropagation(); },
+initial: { y: "100%" },
+animate: { y: 0 },
+exit: { y: "100%" },
+transition: { type: "spring", damping: 28, stiffness: 320 },
+style: {
+background: "white",
+borderTopLeftRadius: 24, borderTopRightRadius: 24,
+maxWidth: 520, width: "100%",
+maxHeight: "90vh",
+display: "flex", flexDirection: "column",
+boxShadow: "0 -24px 60px rgba(0,0,0,0.2)",
+boxSizing: "border-box",
+},
+children: [
+d.jsxs("div", {
+style: {
+display: "flex", alignItems: "center", justifyContent: "space-between",
+padding: "20px 20px 14px", flexShrink: 0,
+},
+children: [
+d.jsxs("h2", {
+style: {
+fontSize: 17, fontWeight: 700, color: "#059669",
+margin: 0, display: "flex", alignItems: "center", gap: 8,
+},
+children: [
+MIcon({ path: ICONS.package, size: 18, color: "#059669" }),
+isEdit ? "Editar sobre" : "Nuevo sobre",
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 30, height: 30, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center",
+padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 14, color: "#64748b" }),
+}),
+],
+}),
+d.jsxs("div", {
+style: { flex: 1, overflow: "auto", padding: "0 20px", boxSizing: "border-box" },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 8,
+},
+children: "Categoría",
+}),
+isEdit ? d.jsxs("div", {
+style: {
+padding: "10px 12px", borderRadius: 10,
+background: "rgba(0,0,0,0.04)",
+display: "flex", alignItems: "center", gap: 10,
+marginBottom: 14, opacity: 0.7,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 32, height: 32, borderRadius: 10,
+background: getCategoryById(categoryId).color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: MIcon({
+path: ICONS[getCategoryById(categoryId).iconKey] || ICONS.other_exp,
+size: 17, color: getCategoryById(categoryId).color,
+}),
+}),
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0 },
+children: getCategoryById(categoryId).name,
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: 0, marginLeft: "auto" },
+children: "(no editable)",
+}),
+],
+}) : d.jsx("div", {
+style: {
+display: "flex", gap: 8, overflowX: "auto",
+paddingBottom: 8, marginBottom: 14,
+marginLeft: -20, marginRight: -20,
+paddingLeft: 20, paddingRight: 20,
+},
+children: EXPENSE_CATEGORIES.map(function (c) {
+const selected = categoryId === c.id;
+return d.jsxs("button", {
+onClick: function () { setCategoryId(c.id); },
+style: {
+flexShrink: 0,
+padding: "10px 8px", borderRadius: 12,
+border: "2px solid",
+borderColor: selected ? c.color : "transparent",
+background: selected ? c.color + "22" : "rgba(0,0,0,0.03)",
+cursor: "pointer",
+display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+width: 80, boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 36, height: 36, borderRadius: 10,
+display: "flex", alignItems: "center", justifyContent: "center",
+background: selected ? c.color : c.color + "22",
+},
+children: MIcon({
+path: ICONS[c.iconKey] || ICONS.other_exp,
+size: 20, color: selected ? "white" : c.color,
+}),
+}),
+d.jsx("span", {
+style: {
+fontSize: 10, fontWeight: 600,
+color: selected ? c.color : "#64748b",
+textAlign: "center", lineHeight: 1.2,
+height: 24,
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: c.name,
+}),
+],
+}, c.id);
+}),
+}),
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 8,
+},
+children: "Nombre del sobre (opcional)",
+}),
+d.jsx("input", {
+type: "text",
+value: name,
+onChange: function (e) { setName(e.target.value); },
+placeholder: getCategoryById(categoryId).name,
+style: {
+width: "100%", padding: 12, borderRadius: 10,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13,
+marginBottom: 14, boxSizing: "border-box", outline: "none",
+},
+}),
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 8,
+},
+children: "Importe mensual",
+}),
+d.jsxs("div", {
+style: {
+padding: "16px 14px", borderRadius: 12, marginBottom: 14,
+background: "rgba(5,150,105,0.06)",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("input", {
+type: "text",
+inputMode: "decimal",
+placeholder: "0",
+value: amount,
+onChange: function (e) {
+const v = e.target.value.replace(/[^0-9,.]/g, "");
+setAmount(v);
+},
+style: {
+fontSize: 28, fontWeight: 700,
+border: "none", background: "transparent",
+outline: "none", textAlign: "right",
+color: "#059669",
+fontFamily: "'Instrument Serif', serif",
+width: "60%", minWidth: 0,
+},
+}),
+d.jsx("span", {
+style: { fontSize: 22, fontWeight: 600, color: "#059669", flexShrink: 0 },
+children: symbol,
+}),
+],
+}),
+d.jsxs("div", {
+style: {
+padding: 14, borderRadius: 12,
+background: isBuffer ? "rgba(5,150,105,0.08)" : "rgba(0,0,0,0.03)",
+marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between",
+cursor: "pointer", boxSizing: "border-box",
+},
+onClick: function () { setIsBuffer(!isBuffer); },
+children: [
+d.jsxs("div", {
+style: { flex: 1, paddingRight: 10 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 2 },
+children: [
+MIcon({ path: ICONS.shield, size: 14, color: isBuffer ? "#059669" : "#94a3b8" }),
+d.jsx("p", {
+style: {
+fontSize: 13, fontWeight: 700,
+color: isBuffer ? "#059669" : "#0f172a",
+margin: 0,
+},
+children: "Sobre amortiguador",
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.4 },
+children: "Cubre los gastos sin sobre asignado y los déficits de otros sobres. Sólo uno puede estar activo.",
+}),
+],
+}),
+d.jsx("div", {
+style: {
+width: 36, height: 22, borderRadius: 11,
+background: isBuffer ? "#059669" : "rgba(0,0,0,0.15)",
+position: "relative", flexShrink: 0,
+transition: "background 0.2s",
+},
+children: d.jsx("div", {
+style: {
+position: "absolute", top: 2,
+left: isBuffer ? 16 : 2,
+width: 18, height: 18, borderRadius: "50%",
+background: "white",
+transition: "left 0.2s",
+boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+},
+}),
+}),
+],
+}),
+d.jsxs("div", {
+style: {
+padding: 14, borderRadius: 12,
+background: accumulate ? "rgba(5,150,105,0.08)" : "rgba(0,0,0,0.03)",
+marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between",
+cursor: "pointer", boxSizing: "border-box",
+},
+onClick: function () { setAccumulate(!accumulate); },
+children: [
+d.jsxs("div", {
+style: { flex: 1, paddingRight: 10 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 13, fontWeight: 700,
+color: accumulate ? "#059669" : "#0f172a",
+margin: "0 0 2px",
+},
+children: "Acumular sobrante",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.4 },
+children: "Si te sobra dinero al final del mes, se suma al mes siguiente.",
+}),
+],
+}),
+d.jsx("div", {
+style: {
+width: 36, height: 22, borderRadius: 11,
+background: accumulate ? "#059669" : "rgba(0,0,0,0.15)",
+position: "relative", flexShrink: 0,
+transition: "background 0.2s",
+},
+children: d.jsx("div", {
+style: {
+position: "absolute", top: 2,
+left: accumulate ? 16 : 2,
+width: 18, height: 18, borderRadius: "50%",
+background: "white",
+transition: "left 0.2s",
+boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+},
+}),
+}),
+],
+}),
+isEdit && o.onDelete ? d.jsxs("button", {
+onClick: o.onDelete,
+style: {
+width: "100%", padding: 12, borderRadius: 10,
+border: "1px solid rgba(220,38,38,0.2)",
+background: "transparent", color: "#dc2626",
+fontSize: 13, fontWeight: 600, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.trash, size: 14, color: "#dc2626" }),
+"Eliminar sobre",
+],
+}) : null,
+],
+}),
+d.jsx("div", {
+style: {
+padding: 16, borderTop: "1px solid rgba(0,0,0,0.06)",
+background: "white", flexShrink: 0, boxSizing: "border-box",
+},
+children: d.jsx("button", {
+onClick: handleSave,
+style: {
+width: "100%", padding: 14, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg,#10b981,#047857)",
+color: "white", fontSize: 14, fontWeight: 700,
+cursor: "pointer",
+boxShadow: "0 6px 20px rgba(5,150,105,0.3)",
+boxSizing: "border-box",
+},
+children: isEdit ? "Guardar cambios" : "Crear sobre",
 }),
 }),
 ],
@@ -5144,7 +5864,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v2.0",
+children: "v8.0",
 }),
 ],
 }),
