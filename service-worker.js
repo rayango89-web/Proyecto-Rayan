@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mebistium-v1';
+const CACHE_NAME = 'mebistium-v10-1';
 
 const urlsToCache = [
   './',
@@ -6,7 +6,6 @@ const urlsToCache = [
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  './index.js',
   './index.css',
 ];
 
@@ -29,9 +28,18 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+    fetch(event.request).then((response) => {
+      if (response && response.status === 200) {
+        const cloned = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, cloned);
+        }).catch(() => {});
+      }
+      return response;
+    }).catch(() => {
+      return caches.match(event.request);
     })
   );
 });
