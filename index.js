@@ -4579,6 +4579,7 @@ key: env.id,
 envelope: env,
 spentCents: spent,
 currency: o.currency,
+transactions: transactions,
 onEdit: function () { setEditingEnv(env); },
 onDelete: function () { deleteEnvelope(env.id); },
 });
@@ -4637,47 +4638,74 @@ const isBuffer = env.isBuffer;
 let progressColor = cat.color;
 if (pct >= 90) progressColor = "#dc2626";
 else if (pct >= 70) progressColor = "#ea580c";
-return d.jsxs(Y.button, {
+const now = new Date();
+const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+const daysLeft = lastDay - now.getDate();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const recentTxs = (o.transactions || [])
+.filter(function (tx) {
+return tx.type === "expense"
+&& tx.categoryId === env.categoryId
+&& tx.date && tx.date.startsWith(curMonth);
+})
+.sort(function (a, bb) { return (bb.date || "").localeCompare(a.date || ""); })
+.slice(0, 3);
+const formatRelative = function (dateStr) {
+if (!dateStr) return "";
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+const txDate = new Date(dateStr);
+txDate.setHours(0, 0, 0, 0);
+const diffMs = today.getTime() - txDate.getTime();
+const diffDays = Math.round(diffMs / 86400000);
+if (diffDays === 0) return "hoy";
+if (diffDays === 1) return "ayer";
+if (diffDays < 7) return "hace " + diffDays + " días";
+if (diffDays < 14) return "hace 1 semana";
+if (diffDays < 30) return "hace " + Math.floor(diffDays / 7) + " semanas";
+const parts = dateStr.split("-");
+return parts[2] + "/" + parts[1];
+};
+return d.jsxs(Y.div, {
 key: env.id,
-onClick: o.onEdit,
-whileTap: { scale: 0.98 },
-initial: { opacity: 0, y: 6 },
+initial: { opacity: 0, y: 8 },
 animate: { opacity: 1, y: 0 },
 className: "glass-card",
 style: {
-padding: 14,
-border: "none",
-cursor: "pointer",
-textAlign: "left",
+padding: 0,
 width: "100%",
 boxSizing: "border-box",
 borderLeft: "3px solid " + cat.color,
+overflow: "hidden",
 },
 children: [
 d.jsxs("div", {
-style: { display: "flex", alignItems: "center", gap: 10, marginBottom: 8 },
+style: {
+display: "flex", alignItems: "center", gap: 12,
+padding: "16px 16px 12px",
+},
 children: [
 d.jsx("div", {
 style: {
-width: 38, height: 38, borderRadius: 11,
+width: 44, height: 44, borderRadius: 12,
 background: cat.color + "1a",
 display: "flex", alignItems: "center", justifyContent: "center",
 flexShrink: 0,
 },
 children: MIcon({
 path: ICONS[cat.iconKey] || ICONS.other_exp,
-size: 19, color: cat.color,
+size: 22, color: cat.color,
 }),
 }),
 d.jsxs("div", {
 style: { flex: 1, minWidth: 0 },
 children: [
 d.jsxs("div", {
-style: { display: "flex", alignItems: "center", gap: 6 },
+style: { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" },
 children: [
 d.jsx("p", {
 style: {
-fontSize: 14, fontWeight: 700, color: "#0f172a",
+fontSize: 15, fontWeight: 700, color: "#0f172a",
 margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
 },
 children: env.name || cat.name,
@@ -4694,9 +4722,9 @@ children: "Amortiguador",
 }) : null,
 ],
 }),
-d.jsxs("p", {
+d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", margin: "2px 0 0" },
-children: [cat.name, " · ", env.accumulate !== false ? "Acumula sobrante" : "No acumula"],
+children: env.accumulate !== false ? "Acumula sobrante" : "No acumula",
 }),
 ],
 }),
@@ -4706,7 +4734,7 @@ children: [
 d.jsxs("p", {
 style: {
 fontSize: 14, fontWeight: 700,
-color: overspent ? "#dc2626" : "#0f172a",
+color: "#0f172a",
 margin: 0,
 },
 children: [formatAmountES(assigned), " ", symbol],
@@ -4719,10 +4747,34 @@ children: "/ mes",
 }),
 ],
 }),
+d.jsxs("div", {
+style: {
+padding: "8px 16px 16px",
+textAlign: "center",
+background: overspent ? "rgba(220,38,38,0.04)" : "rgba(5,150,105,0.03)",
+},
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "8px 0 4px",
+},
+children: "Gastado este mes",
+}),
+d.jsxs("h3", {
+style: {
+fontSize: 32, fontWeight: 700,
+color: overspent ? "#dc2626" : "#0f172a",
+margin: "4px 0 8px",
+fontFamily: "'Instrument Serif', serif",
+wordBreak: "break-all",
+},
+children: [formatAmountES(spent), " ", symbol],
+}),
 d.jsx("div", {
 style: {
 height: 8, background: "rgba(0,0,0,0.05)", borderRadius: 4,
-overflow: "hidden", marginBottom: 6,
+overflow: "hidden", margin: "8px 0",
 },
 children: d.jsx("div", {
 style: {
@@ -4730,34 +4782,120 @@ height: "100%",
 width: pct + "%",
 background: progressColor,
 borderRadius: 4,
-transition: "width 0.3s",
+transition: "width 0.4s",
 },
 }),
 }),
 d.jsxs("div", {
-style: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+style: {
+display: "flex", justifyContent: "space-between", alignItems: "center",
+marginTop: 8, gap: 8,
+},
 children: [
-d.jsxs("p", {
-style: { fontSize: 11, color: "#64748b", margin: 0 },
-children: [
-"Gastado: ",
-d.jsxs("span", {
-style: { fontWeight: 600, color: overspent ? "#dc2626" : "#475569" },
-children: [formatAmountES(spent), " ", symbol],
-}),
-],
+d.jsx("p", {
+style: {
+fontSize: 12, fontWeight: 600,
+color: overspent ? "#dc2626" : remaining < assigned * 0.2 ? "#ea580c" : "#059669",
+margin: 0, textAlign: "left", flex: 1,
+},
+children: overspent
+? "Excedido " + formatAmountES(spent - assigned) + " " + symbol
+: "Te quedan " + formatAmountES(remaining) + " " + symbol,
 }),
 d.jsxs("p", {
 style: {
-fontSize: 11, fontWeight: 600,
-color: overspent ? "#dc2626" : remaining < assigned * 0.2 ? "#ea580c" : "#059669",
-margin: 0,
+fontSize: 11, color: "#64748b",
+margin: 0, textAlign: "right",
+display: "flex", alignItems: "center", gap: 4,
 },
-children: overspent
-? ["Excedido " + formatAmountES(spent - assigned) + " " + symbol]
-: ["Quedan " + formatAmountES(remaining) + " " + symbol],
+children: [
+MIcon({ path: ICONS.info || ICONS.other_exp, size: 11, color: "#94a3b8" }),
+daysLeft === 0 ? "último día" : daysLeft + (daysLeft === 1 ? " día resto" : " días resto"),
+],
 }),
 ],
+}),
+],
+}),
+d.jsxs("div", {
+style: {
+padding: "12px 16px",
+borderTop: "1px solid rgba(0,0,0,0.05)",
+},
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "0 0 8px",
+display: "flex", alignItems: "center", gap: 4,
+},
+children: [
+MIcon({ path: ICONS.list, size: 11, color: "#94a3b8" }),
+"Últimos gastos",
+],
+}),
+recentTxs.length === 0 ? d.jsx("p", {
+style: {
+fontSize: 12, color: "#94a3b8",
+margin: "8px 0", fontStyle: "italic", textAlign: "center",
+},
+children: "Sin movimientos este mes",
+}) : d.jsx("div", {
+children: recentTxs.map(function (tx) {
+return d.jsxs("div", {
+key: tx.id,
+style: {
+display: "flex", justifyContent: "space-between", alignItems: "center",
+padding: "6px 0",
+fontSize: 12,
+},
+children: [
+d.jsx("span", {
+style: {
+color: "#475569",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+flex: 1, minWidth: 0, paddingRight: 8,
+},
+children: tx.note || cat.name,
+}),
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
+children: [
+d.jsx("span", {
+style: { color: "#94a3b8", fontSize: 10 },
+children: formatRelative(tx.date),
+}),
+d.jsxs("span", {
+style: { color: "#dc2626", fontWeight: 600 },
+children: ["-", formatAmountES(tx.amountCents), " ", symbol],
+}),
+],
+}),
+],
+}, tx.id);
+}),
+}),
+],
+}),
+d.jsx("div", {
+style: {
+padding: "0 12px 12px",
+},
+children: d.jsxs("button", {
+onClick: o.onEdit,
+style: {
+width: "100%", padding: "10px 12px", borderRadius: 10,
+border: "1px solid rgba(5,150,105,0.2)",
+background: "rgba(5,150,105,0.05)",
+color: "#059669", fontSize: 12, fontWeight: 600,
+cursor: "pointer", boxSizing: "border-box",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.edit, size: 13, color: "#059669" }),
+"Editar sobre",
+],
+}),
 }),
 ],
 });
@@ -5933,7 +6071,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v9.0",
+children: "v10.0",
 }),
 ],
 }),
