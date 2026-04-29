@@ -4379,10 +4379,9 @@ if (!_uid) {
 alert("Debes iniciar sesión para guardar sobres");
 return;
 }
-const newEnv = Object.assign({
-id: env.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
-createdAt: env.createdAt || Date.now(),
-}, env);
+const newEnv = Object.assign({}, env);
+if (!newEnv.id) newEnv.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+if (!newEnv.createdAt) newEnv.createdAt = Date.now();
 if (newEnv.isBuffer) {
 envelopes.forEach(function (e) {
 if (e.id !== newEnv.id && e.isBuffer) {
@@ -4391,10 +4390,16 @@ try { Cl(_uid, "finance_envelopes", Object.assign({}, e, { isBuffer: false })); 
 });
 }
 try {
-Cl(_uid, "finance_envelopes", newEnv);
+const result = Cl(_uid, "finance_envelopes", newEnv);
+if (result && typeof result.then === "function") {
+result.catch(function (err) {
+console.error("Error async guardando sobre:", err);
+alert("Error al guardar: " + (err && err.message ? err.message : "verifica tu conexion"));
+});
+}
 } catch (e) {
-console.error("Error guardando sobre:", e);
-alert("Error al guardar el sobre");
+console.error("Error sync guardando sobre:", e);
+alert("Error al guardar el sobre: " + (e && e.message ? e.message : ""));
 return;
 }
 setShowCreate(false);
@@ -4728,15 +4733,18 @@ alert("Ya tienes un sobre para la categoría \"" + getCategoryById(categoryId).n
 return;
 }
 }
-o.onSave({
-id: o.envelope ? o.envelope.id : undefined,
-createdAt: o.envelope ? o.envelope.createdAt : undefined,
+const payload = {
 name: name.trim() || getCategoryById(categoryId).name,
 categoryId: categoryId,
 monthlyAmountCents: cents,
 isBuffer: isBuffer,
 accumulate: accumulate,
-});
+};
+if (o.envelope) {
+payload.id = o.envelope.id;
+payload.createdAt = o.envelope.createdAt;
+}
+o.onSave(payload);
 };
 return d.jsx("div", {
 onClick: o.onClose,
