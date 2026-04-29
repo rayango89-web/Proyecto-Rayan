@@ -3506,6 +3506,7 @@ list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/
 pie: '<path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/>',
 more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
 home_outline: '<path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+sparkles: '<path d=\"M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z\"/><path d=\"M19 14l.7 2.3L22 17l-2.3.7L19 20l-.7-2.3L16 17l2.3-.7L19 14z\"/><path d=\"M5 14l.5 1.5L7 16l-1.5.5L5 18l-.5-1.5L3 16l1.5-.5L5 14z\"/>',
 };
 const EXPENSE_CATEGORIES = [
 { id: "food", name: "Comida", color: "#f97316", iconKey: "food" },
@@ -3553,6 +3554,7 @@ const _uid = user ? user.uid : null;
 const path = location.pathname;
 const [transactions, setTransactions] = b.useState([]);
 const [hasLoadedFromFirestore, setHasLoadedFromFirestore] = b.useState(false);
+const [envelopes, setEnvelopes] = b.useState([]);
 const [currency, setCurrency] = b.useState(function () {
 try { return localStorage.getItem("mb-finance-currency") || ""; } catch (e) { return ""; }
 });
@@ -3571,6 +3573,20 @@ setHasLoadedFromFirestore(true);
 } catch (inner) { console.error("fin sub:", inner); }
 });
 } catch (e) { console.error("fin sub err:", e); }
+return function () { if (unsub) try { unsub(); } catch (e) {} };
+}, [_uid]);
+b.useEffect(function () {
+if (!_uid) return;
+let unsub;
+try {
+unsub = Al(_uid, "finance_envelopes", function (envs) {
+try {
+if (Array.isArray(envs)) {
+setEnvelopes(envs);
+}
+} catch (inner) { console.error("env sub:", inner); }
+});
+} catch (e) { console.error("env sub err:", e); }
 return function () { if (unsub) try { unsub(); } catch (e) {} };
 }, [_uid]);
 const saveCurrency = function (c) {
@@ -3617,7 +3633,7 @@ onAdd: function (type) { setShowAddModal(type); },
 isLoading: !hasLoadedFromFirestore,
 });
 } else if (path === "/finanzas/sobres") {
-content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency });
+content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes });
 } else if (path === "/finanzas/stats") {
 content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency });
 } else if (path === "/finanzas/mas") {
@@ -3652,6 +3668,8 @@ d.jsx(FinanceBottomNav, { currentPath: path, navigate: navigate }),d.jsx(Y.butto
 showAddModal ? d.jsx(AddTransactionModal, {
 type: showAddModal,
 currency: currency,
+envelopes: envelopes,
+transactions: transactions,
 onClose: function () { setShowAddModal(null); },
 onSave: addTransaction,
 }) : null,
@@ -4070,6 +4088,9 @@ children: [cat.name, " · ", dateStr],
 d.jsxs("div", {
 style: { display: "flex", alignItems: "center", gap: 4, flexShrink: 0 },
 children: [
+d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 },
+children: [
 d.jsxs("span", {
 style: {
 fontSize: 13, fontWeight: 700,
@@ -4077,6 +4098,22 @@ color: isIncome ? "#16a34a" : "#dc2626",
 whiteSpace: "nowrap",
 },
 children: [isIncome ? "+" : "-", formatAmountES(o.tx.amountCents), " ", symbol],
+}),
+o.tx.envelopeId ? d.jsxs("div", {
+style: {
+display: "flex", alignItems: "center", gap: 3,
+fontSize: 9, fontWeight: 600,
+color: "#059669",
+background: "rgba(5,150,105,0.1)",
+padding: "1px 6px", borderRadius: 5,
+whiteSpace: "nowrap",
+},
+children: [
+MIcon({ path: ICONS.package, size: 9, color: "#059669" }),
+"sobre",
+],
+}) : null,
+],
 }),
 o.onDelete ? d.jsx("button", {
 onClick: function () { o.onDelete(o.tx.id); },
@@ -4112,14 +4149,47 @@ alert("Introduce un importe válido");
 return;
 }
 const cents = Math.round(num * 100);
-o.onSave({
+const txData = {
 type: o.type,
 amountCents: cents,
 currency: o.currency,
 categoryId: categoryId,
 note: note.trim(),
 date: date,
+};
+if (o.type === "expense" && Array.isArray(o.envelopes)) {
+const env = o.envelopes.find(function (e) { return e.categoryId === categoryId; });
+if (env) {
+const now = new Date();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+let alreadySpent = 0;
+if (Array.isArray(o.transactions)) {
+o.transactions.forEach(function (tx) {
+if (tx.type === "expense" && tx.categoryId === categoryId && tx.date && tx.date.startsWith(curMonth)) {
+alreadySpent += tx.amountCents;
+}
 });
+}
+const assigned = env.monthlyAmountCents || 0;
+const remainingBefore = assigned - alreadySpent;
+const remainingAfter = remainingBefore - cents;
+const sym = getCurrencySymbol(o.currency);
+const sobName = env.name || getCategoryById(categoryId).name;
+let msg;
+if (remainingAfter < 0) {
+msg = "ATENCION: Excederas el sobre \"" + sobName + "\" en " + formatAmountES(-remainingAfter) + " " + sym + ".\n\n";
+msg += "Te quedan " + formatAmountES(Math.max(0,remainingBefore)) + " " + sym + " y vas a gastar " + formatAmountES(cents) + " " + sym + ".\n\n";
+msg += "Continuar igualmente?";
+} else {
+msg = "Vas a gastar " + formatAmountES(cents) + " " + sym + " del sobre \"" + sobName + "\".\n\n";
+msg += "Te quedaran " + formatAmountES(remainingAfter) + " " + sym + " (de " + formatAmountES(assigned) + " " + sym + " asignados este mes).\n\n";
+msg += "Confirmar?";
+}
+if (!confirm(msg)) return;
+txData.envelopeId = env.id;
+}
+}
+o.onSave(txData);
 };
 return d.jsx("div", {
 onClick: o.onClose,
@@ -4355,25 +4425,10 @@ children: "Guardar movimiento",
 function FinanceSobresPage(o) {
 const { user } = ls();
 const _uid = user ? user.uid : null;
-const [envelopes, setEnvelopes] = b.useState([]);
-const [loaded, setLoaded] = b.useState(false);
+const envelopes = o.envelopes || [];
+const loaded = true;
 const [showCreate, setShowCreate] = b.useState(false);
 const [editingEnv, setEditingEnv] = b.useState(null);
-b.useEffect(function () {
-if (!_uid) return;
-let unsub;
-try {
-unsub = Al(_uid, "finance_envelopes", function (envs) {
-try {
-if (Array.isArray(envs)) {
-setEnvelopes(envs);
-setLoaded(true);
-}
-} catch (inner) { console.error("env sub:", inner); }
-});
-} catch (e) { console.error("env sub err:", e); }
-return function () { if (unsub) try { unsub(); } catch (e) {} };
-}, [_uid]);
 const saveEnvelope = function (env) {
 if (!_uid) {
 alert("Debes iniciar sesión para guardar sobres");
@@ -4501,9 +4556,10 @@ marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5,
 },
 children: "Próximas funciones",
 }),
-d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v9: cuando gastes en una categoría, descontará del sobre" }),
+
 d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v10: sobre amortiguador + suscripciones recurrentes" }),
 d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "v11: aviso día 1 con reparto automático" }),
+d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "4px 0" }, children: "Asistente local que te aconseje (¿puedo permitirme esto? ¿me renta ahorrar?)" }),
 ],
 }),
 ],
@@ -4547,7 +4603,7 @@ children: "Cómo funciona",
 }),
 d.jsx("p", {
 style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: 0 },
-children: "Por ahora los sobres son sólo informativos. En la próxima versión, cuando saques dinero en una categoría se descontará automáticamente del sobre correspondiente.",
+children: "Cuando registres un gasto en una categoría con sobre asignado, se descontará automáticamente. Si vas a gastar de un sobre, te avisaremos antes con el saldo restante.",
 }),
 ],
 }) : null,
@@ -5349,6 +5405,11 @@ disabled: true,
 MoreItem({
 iconKey: "trending_up", color: "#94a3b8",
 title: "Suscripciones", subtitle: "Próximamente",
+disabled: true,
+}),
+MoreItem({
+iconKey: "sparkles", color: "#94a3b8",
+title: "Asistente local", subtitle: "Próximamente · te aconsejará sobre tus decisiones",
 disabled: true, last: true,
 }),
 ],
@@ -5872,7 +5933,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v8.0",
+children: "v9.0",
 }),
 ],
 }),
