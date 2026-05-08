@@ -3589,6 +3589,62 @@ setEnvelopes(envs);
 } catch (e) { console.error("env sub err:", e); }
 return function () { if (unsub) try { unsub(); } catch (e) {} };
 }, [_uid]);
+b.useEffect(function () {
+if (!_uid || !Array.isArray(envelopes) || envelopes.length === 0) return;
+if (!Array.isArray(transactions)) return;
+const now = new Date();
+const today = now.getDate();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const datePrefix = curMonth + "-";
+let chargesProcessed = 0;
+let chargedNames = [];
+envelopes.forEach(function(env) {
+if (!Array.isArray(env.recurringItems) || env.recurringItems.length === 0) return;
+let envChanged = false;
+const updatedItems = env.recurringItems.map(function(item) {
+const itemDay = parseInt(item.dayOfMonth, 10) || 1;
+if (today < itemDay) return item;
+if (item.lastChargedMonth === curMonth) return item;
+const alreadyExists = transactions.some(function(tx) {
+return tx.recurringItemId === item.id && tx.date && tx.date.startsWith(datePrefix);
+});
+if (alreadyExists) {
+return Object.assign({}, item, { lastChargedMonth: curMonth });
+}
+const txId = Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const chargeDate = curMonth + "-" + String(itemDay).padStart(2, "0");
+const newTx = {
+id: txId,
+type: "expense",
+amountCents: item.amountCents || 0,
+currency: currency,
+categoryId: env.categoryId,
+note: item.name,
+date: chargeDate,
+envelopeId: env.id,
+recurringItemId: item.id,
+fromBuffer: !!env.isBuffer,
+createdAt: Date.now(),
+};
+try { Cl(_uid, "finance_transactions", newTx); } catch(e) { console.error("rec tx:", e); }
+chargesProcessed++;
+chargedNames.push(item.name);
+envChanged = true;
+return Object.assign({}, item, { lastChargedMonth: curMonth });
+});
+if (envChanged) {
+const updatedEnv = Object.assign({}, env, { recurringItems: updatedItems });
+try { Cl(_uid, "finance_envelopes", updatedEnv); } catch(e) { console.error("rec env:", e); }
+}
+});
+if (chargesProcessed > 0) {
+setTimeout(function() {
+const lst = chargedNames.length > 3 ? (chargedNames.slice(0,3).join(", ") + " y " + (chargedNames.length-3) + " más") : chargedNames.join(", ");
+alert("Se han registrado " + chargesProcessed + " cobro(s) recurrente(s) este mes:\n\n" + lst);
+}, 600);
+}
+}, [_uid, envelopes, transactions, currency]);
+
 const saveCurrency = function (c) {
 setCurrency(c);
 try { localStorage.setItem("mb-finance-currency", c); } catch (e) {}
@@ -4103,14 +4159,18 @@ o.tx.envelopeId ? d.jsxs("div", {
 style: {
 display: "flex", alignItems: "center", gap: 3,
 fontSize: 9, fontWeight: 600,
-color: o.tx.fromBuffer ? "#0284c7" : "#059669",
-background: o.tx.fromBuffer ? "rgba(2,132,199,0.1)" : "rgba(5,150,105,0.1)",
+color: o.tx.recurringItemId ? "#7c3aed" : (o.tx.fromBuffer ? "#0284c7" : "#059669"),
+background: o.tx.recurringItemId ? "rgba(124,58,237,0.1)" : (o.tx.fromBuffer ? "rgba(2,132,199,0.1)" : "rgba(5,150,105,0.1)"),
 padding: "1px 6px", borderRadius: 5,
 whiteSpace: "nowrap",
 },
 children: [
-MIcon({ path: o.tx.fromBuffer ? ICONS.shield : ICONS.package, size: 9, color: o.tx.fromBuffer ? "#0284c7" : "#059669" }),
-o.tx.fromBuffer ? "amortig." : "sobre",
+MIcon({
+path: o.tx.recurringItemId ? ICONS.subs : (o.tx.fromBuffer ? ICONS.shield : ICONS.package),
+size: 9,
+color: o.tx.recurringItemId ? "#7c3aed" : (o.tx.fromBuffer ? "#0284c7" : "#059669"),
+}),
+o.tx.recurringItemId ? "recurr." : (o.tx.fromBuffer ? "amortig." : "sobre"),
 ],
 }) : null,
 ],
@@ -4698,6 +4758,19 @@ bufferCoveredForMe += tx.bufferOverflowCents;
 }
 const totalBufferUsed = bufferUsageDetails.reduce(function (acc, x) { return acc + x.amount; }, 0);
 const bufferAvailable = isBuffer ? Math.max(0, assigned - totalBufferUsed) : 0;
+const recurringList = Array.isArray(env.recurringItems) ? env.recurringItems : [];
+const todayDay = _now.getDate();
+const upcomingRecs = recurringList
+.map(function(item) {
+const itemDay = parseInt(item.dayOfMonth, 10) || 1;
+const charged = item.lastChargedMonth === _curMonth;
+return Object.assign({}, item, {
+day: itemDay,
+charged: charged,
+isPast: itemDay < todayDay,
+});
+})
+.sort(function(a, b) { return a.day - b.day; });
 let progressColor = cat.color;
 if (pct >= 90) progressColor = "#dc2626";
 else if (pct >= 70) progressColor = "#ea580c";
@@ -4886,6 +4959,63 @@ daysLeft === 0 ? "último día" : daysLeft + (daysLeft === 1 ? " día resto" : "
 }),
 ],
 }),
+recurringList.length > 0 ? d.jsxs("div", {
+style: {
+padding: "10px 16px",
+borderTop: "1px solid rgba(0,0,0,0.05)",
+background: "rgba(5,150,105,0.02)",
+},
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "0 0 6px",
+display: "flex", alignItems: "center", gap: 4,
+},
+children: [
+MIcon({ path: ICONS.subs, size: 11, color: "#94a3b8" }),
+"Próximos cobros",
+],
+}),
+d.jsx("div", {
+children: upcomingRecs.map(function(rec, ix) {
+return d.jsxs("div", {
+key: rec.id || ix,
+style: {
+display: "flex", justifyContent: "space-between", alignItems: "center",
+padding: "4px 0",
+fontSize: 12,
+opacity: rec.charged ? 0.5 : 1,
+},
+children: [
+d.jsxs("span", {
+style: {
+color: "#475569",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+flex: 1, minWidth: 0, paddingRight: 8,
+textDecoration: rec.charged ? "line-through" : "none",
+},
+children: [rec.name, " · día ", rec.day],
+}),
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 8, flexShrink: 0 },
+children: [
+rec.charged ? d.jsx("span", {
+style: { fontSize: 9, color: "#059669", fontWeight: 700, letterSpacing: 0.3 },
+children: "COBRADO",
+}) : null,
+d.jsxs("span", {
+style: { color: "#475569", fontWeight: 600 },
+children: ["-", formatAmountES(rec.amountCents || 0), " ", symbol],
+}),
+],
+}),
+],
+}, rec.id || ix);
+}),
+}),
+],
+}) : null,
 d.jsxs("div", {
 style: {
 padding: "12px 16px",
@@ -5005,6 +5135,196 @@ MIcon({ path: ICONS.edit, size: 13, color: "#059669" }),
 ],
 });
 }
+function RecurringItemModal(o) {
+const item = o.item || {};
+const isEdit = !!(o.item && o.item.name);
+const [name, setName] = b.useState(item.name || "");
+const [amount, setAmount] = b.useState(function() {
+const cents = item.amountCents || 0;
+if (cents === 0) return "";
+return formatAmountES(cents).replace(",00", "");
+});
+const [dayOfMonth, setDayOfMonth] = b.useState(item.dayOfMonth || 1);
+const symbol = getCurrencySymbol(o.currency);
+
+const handleSave = function() {
+if (!name.trim()) {
+alert("Pon un nombre al recurrente (ej: Spotify)");
+return;
+}
+const cleaned = amount.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+if (!num || num <= 0) {
+alert("Introduce un importe válido");
+return;
+}
+const cents = Math.round(num * 100);
+const day = parseInt(dayOfMonth, 10);
+if (!day || day < 1 || day > 31) {
+alert("Día inválido (1-31)");
+return;
+}
+o.onSave({
+id: item.id || ("rec_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+name: name.trim(),
+amountCents: cents,
+dayOfMonth: day,
+lastChargedMonth: item.lastChargedMonth || null,
+});
+};
+
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 200, padding: 16,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: {
+background: "white",
+borderRadius: 20,
+maxWidth: 380, width: "100%",
+padding: 22,
+boxSizing: "border-box",
+boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+children: [
+d.jsxs("h2", {
+style: {
+fontSize: 16, fontWeight: 700, color: "#059669", margin: 0,
+display: "flex", alignItems: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.subs, size: 16, color: "#059669" }),
+isEdit ? "Editar recurrente" : "Nuevo recurrente",
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 28, height: 28, borderRadius: 8, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center",
+padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 13, color: "#64748b" }),
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Nombre",
+}),
+d.jsx("input", {
+type: "text",
+value: name,
+onChange: function(e) { setName(e.target.value); },
+placeholder: "Ej: Spotify, Gimnasio",
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13,
+marginBottom: 12, boxSizing: "border-box", outline: "none",
+},
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Importe mensual",
+}),
+d.jsxs("div", {
+style: {
+padding: "12px 12px", borderRadius: 10, marginBottom: 12,
+background: "rgba(5,150,105,0.06)",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("input", {
+type: "text",
+inputMode: "decimal",
+placeholder: "0",
+value: amount,
+onChange: function(e) {
+const v = e.target.value.replace(/[^0-9,.]/g, "");
+setAmount(v);
+},
+style: {
+fontSize: 22, fontWeight: 700,
+border: "none", background: "transparent",
+outline: "none", textAlign: "right",
+color: "#059669",
+fontFamily: "'Instrument Serif', serif",
+width: "60%", minWidth: 0,
+},
+}),
+d.jsx("span", {
+style: { fontSize: 18, fontWeight: 600, color: "#059669", flexShrink: 0 },
+children: symbol,
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Día de cobro (1-31)",
+}),
+d.jsx("input", {
+type: "number",
+min: 1, max: 31,
+value: dayOfMonth,
+onChange: function(e) { setDayOfMonth(e.target.value); },
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13,
+marginBottom: 12, boxSizing: "border-box", outline: "none",
+},
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", marginBottom: 16, lineHeight: 1.4 },
+children: "Cada vez que abras Mebistium después del día indicado, se registrará automáticamente como gasto si no se ha cobrado este mes.",
+}),
+isEdit && o.onDelete ? d.jsx("button", {
+onClick: function() {
+if (confirm("¿Eliminar este recurrente?")) o.onDelete();
+},
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(220,38,38,0.2)",
+background: "transparent", color: "#dc2626",
+fontSize: 12, fontWeight: 600, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box",
+},
+children: "Eliminar recurrente",
+}) : null,
+d.jsx("button", {
+onClick: handleSave,
+style: {
+width: "100%", padding: 12, borderRadius: 10, border: "none",
+background: "linear-gradient(135deg,#10b981,#047857)",
+color: "white", fontSize: 13, fontWeight: 700,
+cursor: "pointer",
+boxShadow: "0 4px 14px rgba(5,150,105,0.3)",
+boxSizing: "border-box",
+},
+children: isEdit ? "Guardar" : "Añadir recurrente",
+}),
+],
+}),
+});
+}
+
 function EnvelopeModal(o) {
 const isEdit = !!o.envelope;
 const [name, setName] = b.useState(o.envelope ? (o.envelope.name || "") : "");
@@ -5016,6 +5336,10 @@ return formatAmountES(cents).replace(",00", "");
 });
 const [isBuffer, setIsBuffer] = b.useState(o.envelope ? !!o.envelope.isBuffer : false);
 const [accumulate, setAccumulate] = b.useState(o.envelope ? o.envelope.accumulate !== false : true);
+const [recurringItems, setRecurringItems] = b.useState(function() {
+return (o.envelope && Array.isArray(o.envelope.recurringItems)) ? o.envelope.recurringItems.slice() : [];
+});
+const [showRecModal, setShowRecModal] = b.useState(null);
 const symbol = getCurrencySymbol(o.currency);
 const handleSave = function () {
 const cleaned = amount.replace(/\./g, "").replace(",", ".");
@@ -5038,6 +5362,7 @@ categoryId: categoryId,
 monthlyAmountCents: cents,
 isBuffer: isBuffer,
 accumulate: accumulate,
+recurringItems: recurringItems,
 };
 if (o.envelope) {
 payload.id = o.envelope.id;
@@ -5340,6 +5665,100 @@ boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
 }),
 ],
 }),
+d.jsxs("div", {
+style: { marginBottom: 14 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", margin: 0,
+display: "flex", alignItems: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.subs, size: 12, color: "#64748b" }),
+"Suscripciones recurrentes",
+],
+}),
+d.jsxs("button", {
+onClick: function() {
+setShowRecModal({
+id: "rec_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+name: "",
+amountCents: 0,
+dayOfMonth: 1,
+});
+},
+style: {
+fontSize: 11, fontWeight: 600, color: "#059669",
+background: "rgba(5,150,105,0.08)",
+border: "none", borderRadius: 6,
+padding: "4px 8px", cursor: "pointer",
+display: "flex", alignItems: "center", gap: 3,
+},
+children: [
+MIcon({ path: ICONS.plus, size: 11, color: "#059669" }),
+"Añadir",
+],
+}),
+],
+}),
+recurringItems.length === 0 ? d.jsx("p", {
+style: {
+fontSize: 11, color: "#94a3b8",
+margin: "8px 0", fontStyle: "italic", textAlign: "center",
+padding: "12px 8px", background: "rgba(0,0,0,0.02)", borderRadius: 8,
+},
+children: "Sin suscripciones recurrentes",
+}) : d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 6 },
+children: recurringItems.map(function(item, ix) {
+return d.jsxs("button", {
+onClick: function() { setShowRecModal(Object.assign({}, item)); },
+style: {
+display: "flex", alignItems: "center", gap: 10,
+padding: "8px 10px", borderRadius: 8,
+background: "rgba(0,0,0,0.03)",
+border: "none", cursor: "pointer",
+width: "100%", boxSizing: "border-box",
+textAlign: "left",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 28, height: 28, borderRadius: 8,
+background: "rgba(5,150,105,0.1)",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: ICONS.subs, size: 14, color: "#059669" }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0,
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+children: item.name || "Sin nombre",
+}),
+d.jsxs("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: ["día ", item.dayOfMonth || 1, " de cada mes"],
+}),
+],
+}),
+d.jsxs("p", {
+style: { fontSize: 13, fontWeight: 700, color: "#059669", margin: 0, flexShrink: 0 },
+children: ["-", formatAmountES(item.amountCents || 0), " ", symbol],
+}),
+],
+}, item.id || ix);
+}),
+}),
+],
+}),
 isEdit && o.onDelete ? d.jsxs("button", {
 onClick: o.onDelete,
 style: {
@@ -5375,6 +5794,24 @@ boxSizing: "border-box",
 children: isEdit ? "Guardar cambios" : "Crear sobre",
 }),
 }),
+showRecModal ? d.jsx(RecurringItemModal, {
+item: showRecModal,
+currency: o.currency,
+onClose: function() { setShowRecModal(null); },
+onSave: function(item) {
+const exists = recurringItems.find(function(r) { return r.id === item.id; });
+if (exists) {
+setRecurringItems(recurringItems.map(function(r) { return r.id === item.id ? item : r; }));
+} else {
+setRecurringItems(recurringItems.concat([item]));
+}
+setShowRecModal(null);
+},
+onDelete: function() {
+setRecurringItems(recurringItems.filter(function(r) { return r.id !== showRecModal.id; }));
+setShowRecModal(null);
+},
+}) : null,
 ],
 }),
 });
@@ -6177,7 +6614,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v11.0",
+children: "v12.0",
 }),
 ],
 }),
@@ -6202,7 +6639,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v11",
+children: "v12",
 });
 }
 
