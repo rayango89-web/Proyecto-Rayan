@@ -4103,14 +4103,14 @@ o.tx.envelopeId ? d.jsxs("div", {
 style: {
 display: "flex", alignItems: "center", gap: 3,
 fontSize: 9, fontWeight: 600,
-color: "#059669",
-background: "rgba(5,150,105,0.1)",
+color: o.tx.fromBuffer ? "#0284c7" : "#059669",
+background: o.tx.fromBuffer ? "rgba(2,132,199,0.1)" : "rgba(5,150,105,0.1)",
 padding: "1px 6px", borderRadius: 5,
 whiteSpace: "nowrap",
 },
 children: [
-MIcon({ path: ICONS.package, size: 9, color: "#059669" }),
-"sobre",
+MIcon({ path: o.tx.fromBuffer ? ICONS.shield : ICONS.package, size: 9, color: o.tx.fromBuffer ? "#0284c7" : "#059669" }),
+o.tx.fromBuffer ? "amortig." : "sobre",
 ],
 }) : null,
 ],
@@ -4158,14 +4158,16 @@ note: note.trim(),
 date: date,
 };
 if (o.type === "expense" && Array.isArray(o.envelopes)) {
-const env = o.envelopes.find(function (e) { return e.categoryId === categoryId; });
+const env = o.envelopes.find(function (e) { return e.categoryId === categoryId && !e.isBuffer; });
+const buffer = o.envelopes.find(function (e) { return e.isBuffer; });
+const sym = getCurrencySymbol(o.currency);
 if (env) {
 const now = new Date();
 const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 let alreadySpent = 0;
 if (Array.isArray(o.transactions)) {
 o.transactions.forEach(function (tx) {
-if (tx.type === "expense" && tx.categoryId === categoryId && tx.date && tx.date.startsWith(curMonth)) {
+if (tx.type === "expense" && tx.categoryId === categoryId && tx.envelopeId === env.id && tx.date && tx.date.startsWith(curMonth)) {
 alreadySpent += tx.amountCents;
 }
 });
@@ -4173,12 +4175,14 @@ alreadySpent += tx.amountCents;
 const assigned = env.monthlyAmountCents || 0;
 const remainingBefore = assigned - alreadySpent;
 const remainingAfter = remainingBefore - cents;
-const sym = getCurrencySymbol(o.currency);
 const sobName = env.name || getCategoryById(categoryId).name;
 let msg;
 if (remainingAfter < 0) {
 msg = "ATENCION: Excederas el sobre \"" + sobName + "\" en " + formatAmountES(-remainingAfter) + " " + sym + ".\n\n";
 msg += "Te quedan " + formatAmountES(Math.max(0,remainingBefore)) + " " + sym + " y vas a gastar " + formatAmountES(cents) + " " + sym + ".\n\n";
+if (buffer) {
+msg += "El exceso lo cubrira el sobre amortiguador.\n\n";
+}
 msg += "Continuar igualmente?";
 } else {
 msg = "Vas a gastar " + formatAmountES(cents) + " " + sym + " del sobre \"" + sobName + "\".\n\n";
@@ -4187,6 +4191,19 @@ msg += "Confirmar?";
 }
 if (!confirm(msg)) return;
 txData.envelopeId = env.id;
+if (remainingAfter < 0 && buffer) {
+txData.bufferOverflowCents = -remainingAfter;
+txData.bufferEnvelopeId = buffer.id;
+}
+} else if (buffer) {
+const catName = getCategoryById(categoryId).name;
+const bufName = buffer.name || "Amortiguador";
+const msg = "Esta categoria \"" + catName + "\" no tiene sobre asignado.\n\n" +
+"El gasto de " + formatAmountES(cents) + " " + sym + " saldra del sobre amortiguador \"" + bufName + "\".\n\n" +
+"Confirmar?";
+if (!confirm(msg)) return;
+txData.envelopeId = buffer.id;
+txData.fromBuffer = true;
 }
 }
 o.onSave(txData);
@@ -4473,8 +4490,18 @@ const now = new Date();
 const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 let total = 0;
 transactions.forEach(function (tx) {
-if (tx.type === "expense" && tx.categoryId === envelope.categoryId && tx.date && tx.date.startsWith(curMonth)) {
+if (tx.type !== "expense" || !tx.date || !tx.date.startsWith(curMonth)) return;
+if (envelope.isBuffer) {
+if (tx.envelopeId === envelope.id) {
 total += tx.amountCents;
+}
+if (tx.bufferEnvelopeId === envelope.id && tx.bufferOverflowCents) {
+total += tx.bufferOverflowCents;
+}
+} else {
+if (tx.categoryId === envelope.categoryId && tx.envelopeId === envelope.id) {
+total += tx.amountCents;
+}
 }
 });
 return total;
@@ -4635,6 +4662,42 @@ const remaining = assigned - spent;
 const pct = assigned > 0 ? Math.min(100, (spent / assigned) * 100) : 0;
 const overspent = spent > assigned;
 const isBuffer = env.isBuffer;
+const allEnvelopes = o.allEnvelopes || [];
+const allTransactions = o.transactions || [];
+const _now = new Date();
+const _curMonth = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+let bufferCoveredForMe = 0;
+let bufferUsageDetails = [];
+if (isBuffer) {
+allTransactions.forEach(function (tx) {
+if (tx.envelopeId === env.id && tx.date && tx.date.startsWith(_curMonth)) {
+if (tx.fromBuffer) {
+bufferUsageDetails.push({
+category: getCategoryById(tx.categoryId).name,
+amount: tx.amountCents,
+type: "direct",
+note: tx.note,
+});
+}
+}
+if (tx.bufferEnvelopeId === env.id && tx.bufferOverflowCents && tx.date && tx.date.startsWith(_curMonth)) {
+bufferUsageDetails.push({
+category: getCategoryById(tx.categoryId).name,
+amount: tx.bufferOverflowCents,
+type: "overflow",
+note: tx.note,
+});
+}
+});
+} else if (overspent) {
+allTransactions.forEach(function (tx) {
+if (tx.envelopeId === env.id && tx.bufferOverflowCents && tx.date && tx.date.startsWith(_curMonth)) {
+bufferCoveredForMe += tx.bufferOverflowCents;
+}
+});
+}
+const totalBufferUsed = bufferUsageDetails.reduce(function (acc, x) { return acc + x.amount; }, 0);
+const bufferAvailable = isBuffer ? Math.max(0, assigned - totalBufferUsed) : 0;
 let progressColor = cat.color;
 if (pct >= 90) progressColor = "#dc2626";
 else if (pct >= 70) progressColor = "#ea580c";
@@ -4724,7 +4787,9 @@ children: "Amortiguador",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", margin: "2px 0 0" },
-children: env.accumulate !== false ? "Acumula sobrante" : "No acumula",
+children: isBuffer
+? "Tu colchón mensual"
+: env.accumulate !== false ? "Acumula sobrante" : "No acumula",
 }),
 ],
 }),
@@ -4759,17 +4824,17 @@ style: {
 fontSize: 10, fontWeight: 700, textTransform: "uppercase",
 letterSpacing: 0.5, color: "#94a3b8", margin: "8px 0 4px",
 },
-children: "Gastado este mes",
+children: isBuffer ? "Cubrió este mes" : "Gastado este mes",
 }),
 d.jsxs("h3", {
 style: {
 fontSize: 32, fontWeight: 700,
-color: overspent ? "#dc2626" : "#0f172a",
+color: isBuffer ? "#059669" : (overspent ? "#dc2626" : "#0f172a"),
 margin: "4px 0 8px",
 fontFamily: "'Instrument Serif', serif",
 wordBreak: "break-all",
 },
-children: [formatAmountES(spent), " ", symbol],
+children: [formatAmountES(isBuffer ? totalBufferUsed : spent), " ", symbol],
 }),
 d.jsx("div", {
 style: {
@@ -4779,8 +4844,8 @@ overflow: "hidden", margin: "8px 0",
 children: d.jsx("div", {
 style: {
 height: "100%",
-width: pct + "%",
-background: progressColor,
+width: (isBuffer ? (assigned > 0 ? Math.min(100, (totalBufferUsed / assigned) * 100) : 0) : pct) + "%",
+background: isBuffer ? "#059669" : progressColor,
 borderRadius: 4,
 transition: "width 0.4s",
 },
@@ -4798,8 +4863,12 @@ fontSize: 12, fontWeight: 600,
 color: overspent ? "#dc2626" : remaining < assigned * 0.2 ? "#ea580c" : "#059669",
 margin: 0, textAlign: "left", flex: 1,
 },
-children: overspent
-? "Excedido " + formatAmountES(spent - assigned) + " " + symbol
+children: isBuffer
+? "Disponible: " + formatAmountES(bufferAvailable) + " " + symbol
+: overspent
+? (bufferCoveredForMe > 0
+? "Excedido " + formatAmountES(spent - assigned) + " · cubierto " + formatAmountES(bufferCoveredForMe) + " " + symbol
+: "Excedido " + formatAmountES(spent - assigned) + " " + symbol)
 : "Te quedan " + formatAmountES(remaining) + " " + symbol,
 }),
 d.jsxs("p", {
@@ -4831,10 +4900,46 @@ display: "flex", alignItems: "center", gap: 4,
 },
 children: [
 MIcon({ path: ICONS.list, size: 11, color: "#94a3b8" }),
-"Últimos gastos",
+isBuffer ? "Qué ha cubierto" : "Últimos gastos",
 ],
 }),
-recentTxs.length === 0 ? d.jsx("p", {
+isBuffer ? (
+bufferUsageDetails.length === 0 ? d.jsx("p", {
+style: {
+fontSize: 12, color: "#94a3b8",
+margin: "8px 0", fontStyle: "italic", textAlign: "center",
+},
+children: "No ha cubierto nada este mes",
+}) : d.jsx("div", {
+children: bufferUsageDetails.slice(0, 4).map(function (item, ix) {
+return d.jsxs("div", {
+key: ix,
+style: {
+display: "flex", justifyContent: "space-between", alignItems: "center",
+padding: "6px 0",
+fontSize: 12,
+},
+children: [
+d.jsxs("span", {
+style: {
+color: "#475569",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+flex: 1, minWidth: 0, paddingRight: 8,
+},
+children: [
+item.type === "overflow" ? "Déficit · " : (item.note ? item.note + " · " : ""),
+item.category,
+],
+}),
+d.jsxs("span", {
+style: { color: "#dc2626", fontWeight: 600, flexShrink: 0 },
+children: ["-", formatAmountES(item.amount), " ", symbol],
+}),
+],
+}, ix);
+}),
+})
+) : (recentTxs.length === 0 ? d.jsx("p", {
 style: {
 fontSize: 12, color: "#94a3b8",
 margin: "8px 0", fontStyle: "italic", textAlign: "center",
@@ -4874,7 +4979,7 @@ children: ["-", formatAmountES(tx.amountCents), " ", symbol],
 ],
 }, tx.id);
 }),
-}),
+})),
 ],
 }),
 d.jsx("div", {
@@ -6072,7 +6177,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v10.0",
+children: "v11.0",
 }),
 ],
 }),
@@ -6097,7 +6202,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v10",
+children: "v11",
 });
 }
 
