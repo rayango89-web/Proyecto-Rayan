@@ -3467,7 +3467,7 @@ height: props.size || 22,
 viewBox: "0 0 24 24",
 fill: "none",
 stroke: props.color || "currentColor",
-strokeWidth: props.strokeWidth || 2.5,
+strokeWidth: props.strokeWidth || 2,
 strokeLinecap: "round",
 strokeLinejoin: "round",
 style: props.style,
@@ -3560,6 +3560,8 @@ try { return localStorage.getItem("mb-finance-currency") || ""; } catch (e) { re
 });
 const [showOnboarding, setShowOnboarding] = b.useState(!currency);
 const [showAddModal, setShowAddModal] = b.useState(null);
+const [showDistribute, setShowDistribute] = b.useState(null);
+const [showDay1Banner, setShowDay1Banner] = b.useState(false);
 b.useEffect(function () {
 if (!_uid) return;
 let unsub;
@@ -3589,6 +3591,22 @@ setEnvelopes(envs);
 } catch (e) { console.error("env sub err:", e); }
 return function () { if (unsub) try { unsub(); } catch (e) {} };
 }, [_uid]);
+b.useEffect(function () {
+if (!_uid || !Array.isArray(transactions)) return;
+const now = new Date();
+const day = now.getDate();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+if (day < 1 || day > 5) return;
+const dismissedKey = "mb-day1-dismissed-" + curMonth;
+let dismissed = false;
+try { dismissed = !!localStorage.getItem(dismissedKey); } catch(e) {}
+if (dismissed) return;
+const hasPaga = transactions.some(function(tx) {
+return tx.type === "income" && (tx.categoryId === "salary" || tx.categoryId === "scholarship") && tx.date && tx.date.startsWith(curMonth);
+});
+if (!hasPaga) setShowDay1Banner(true);
+}, [_uid, transactions]);
+
 b.useEffect(function () {
 if (!_uid || !Array.isArray(envelopes) || envelopes.length === 0) return;
 if (!Array.isArray(transactions)) return;
@@ -3667,6 +3685,9 @@ alert("Error al guardar el movimiento. Verifica tu conexión.");
 return;
 }
 setShowAddModal(null);
+if (newTx.type === "income" && Array.isArray(envelopes) && envelopes.length > 0) {
+setTimeout(function() { setShowDistribute(newTx); }, 250);
+}
 };
 const deleteTransaction = function (id) {
 if (!confirm("¿Eliminar este movimiento?")) return;
@@ -3728,6 +3749,45 @@ envelopes: envelopes,
 transactions: transactions,
 onClose: function () { setShowAddModal(null); },
 onSave: addTransaction,
+}) : null,
+showDistribute ? d.jsx(IncomeDistributeModal, {
+transaction: showDistribute,
+envelopes: envelopes,
+currency: currency,
+onClose: function() { setShowDistribute(null); },
+onConfirm: function(distribution, bufferAmt) {
+if (!_uid) return;
+const now = new Date();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+envelopes.forEach(function(env) {
+let assignedThisMonth = 0;
+if (env.isBuffer) {
+assignedThisMonth = bufferAmt || 0;
+} else {
+assignedThisMonth = distribution[env.id] || 0;
+}
+if (assignedThisMonth > 0) {
+const monthlyAssignments = Object.assign({}, env.monthlyAssignments || {});
+monthlyAssignments[curMonth] = assignedThisMonth;
+const updated = Object.assign({}, env, { monthlyAssignments: monthlyAssignments });
+try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("repart env:", e); }
+}
+});
+setShowDistribute(null);
+}
+}) : null,
+showDay1Banner ? d.jsx(Day1Modal, {
+onYes: function() {
+setShowDay1Banner(false);
+setShowAddModal("income");
+},
+onAlready: function() {
+setShowDay1Banner(false);
+const now = new Date();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+try { localStorage.setItem("mb-day1-dismissed-" + curMonth, "1"); } catch(e) {}
+},
+onLater: function() { setShowDay1Banner(false); },
 }) : null,
 ],
 });
@@ -4232,7 +4292,12 @@ alreadySpent += tx.amountCents;
 }
 });
 }
-const assigned = env.monthlyAmountCents || 0;
+const assigned = (function() {
+if (env.monthlyAssignments && typeof env.monthlyAssignments === "object" && env.monthlyAssignments[_curMonth] !== undefined) {
+return env.monthlyAssignments[_curMonth];
+}
+return env.monthlyAmountCents || 0;
+})();
 const remainingBefore = assigned - alreadySpent;
 const remainingAfter = remainingBefore - cents;
 const sobName = env.name || getCategoryById(categoryId).name;
@@ -4716,7 +4781,12 @@ function EnvelopeCard(o) {
 const env = o.envelope;
 const cat = getCategoryById(env.categoryId);
 const symbol = getCurrencySymbol(o.currency);
-const assigned = env.monthlyAmountCents || 0;
+const assigned = (function() {
+if (env.monthlyAssignments && typeof env.monthlyAssignments === "object" && env.monthlyAssignments[_curMonth] !== undefined) {
+return env.monthlyAssignments[_curMonth];
+}
+return env.monthlyAmountCents || 0;
+})();
 const spent = o.spentCents || 0;
 const remaining = assigned - spent;
 const pct = assigned > 0 ? Math.min(100, (spent / assigned) * 100) : 0;
@@ -5135,6 +5205,302 @@ MIcon({ path: ICONS.edit, size: 13, color: "#059669" }),
 ],
 });
 }
+function IncomeDistributeModal(o) {
+const tx = o.transaction;
+const envelopes = (o.envelopes || []).filter(function(e) { return !e.isBuffer; });
+const buffer = (o.envelopes || []).find(function(e) { return e.isBuffer; });
+const symbol = getCurrencySymbol(o.currency);
+const totalAssigned = envelopes.reduce(function(acc, e) { return acc + (e.monthlyAmountCents || 0); }, 0);
+const incomeAmount = tx.amountCents || 0;
+const monthName = (function() {
+const months = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const d = tx.date ? new Date(tx.date) : new Date();
+return months[d.getMonth()];
+})();
+const initialDist = {};
+envelopes.forEach(function(e) {
+const proportion = totalAssigned > 0 ? (e.monthlyAmountCents || 0) / totalAssigned : 0;
+initialDist[e.id] = Math.round(incomeAmount * proportion);
+});
+const [distribution, setDistribution] = b.useState(initialDist);
+const [bufferAmount, setBufferAmount] = b.useState(0);
+const sumDistributed = Object.keys(distribution).reduce(function(acc, k) { return acc + (distribution[k] || 0); }, 0);
+const remaining = incomeAmount - sumDistributed - bufferAmount;
+const updateAmount = function(envId, valStr) {
+const cleaned = valStr.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+const cents = isNaN(num) || num < 0 ? 0 : Math.round(num * 100);
+const newDist = Object.assign({}, distribution);
+newDist[envId] = cents;
+setDistribution(newDist);
+};
+const updateBuffer = function(valStr) {
+const cleaned = valStr.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+const cents = isNaN(num) || num < 0 ? 0 : Math.round(num * 100);
+setBufferAmount(cents);
+};
+const handleConfirm = function() {
+o.onConfirm(distribution, bufferAmount);
+};
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "flex-end", justifyContent: "center",
+zIndex: 110,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { y: "100%" },
+animate: { y: 0 },
+style: {
+background: "white",
+borderTopLeftRadius: 24, borderTopRightRadius: 24,
+maxWidth: 520, width: "100%",
+maxHeight: "90vh",
+display: "flex", flexDirection: "column",
+boxShadow: "0 -24px 60px rgba(0,0,0,0.2)",
+boxSizing: "border-box",
+},
+children: [
+d.jsxs("div", {
+style: { padding: "20px 20px 14px", flexShrink: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+children: [
+d.jsxs("h2", {
+style: { fontSize: 17, fontWeight: 700, color: "#059669", margin: 0,
+display: "flex", alignItems: "center", gap: 8 },
+children: [
+MIcon({ path: ICONS.package, size: 18, color: "#059669" }),
+"Repartir ingreso de " + monthName,
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: { width: 30, height: 30, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
+children: MIcon({ path: ICONS.close, size: 14, color: "#64748b" }),
+}),
+],
+}),
+d.jsxs("p", {
+style: { fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 },
+children: [
+"Has ingresado ",
+d.jsxs("span", { style: { fontWeight: 700, color: "#059669" }, children: [formatAmountES(incomeAmount), " ", symbol] }),
+". Ajusta cuánto va a cada sobre. La sugerencia es proporcional a sus importes mensuales.",
+],
+}),
+],
+}),
+d.jsx("div", {
+style: { flex: 1, overflow: "auto", padding: "0 20px 16px" },
+children: d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 10 },
+children: [
+envelopes.map(function(env) {
+const cat = getCategoryById(env.categoryId);
+return d.jsxs("div", {
+key: env.id,
+style: {
+padding: 12, borderRadius: 12,
+background: "rgba(0,0,0,0.03)",
+display: "flex", alignItems: "center", gap: 10,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: { width: 34, height: 34, borderRadius: 10,
+background: cat.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+children: MIcon({ path: ICONS[cat.iconKey] || ICONS.other_exp, size: 17, color: cat.color }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0,
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+children: env.name || cat.name,
+}),
+d.jsxs("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: ["asignado: ", formatAmountES(env.monthlyAmountCents || 0), " ", symbol],
+}),
+],
+}),
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 4, flexShrink: 0 },
+children: [
+d.jsx("input", {
+type: "text", inputMode: "decimal",
+value: formatAmountES(distribution[env.id] || 0),
+onChange: function(e) { updateAmount(env.id, e.target.value); },
+style: { width: 80, padding: "6px 8px", borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13, fontWeight: 600,
+color: "#059669", textAlign: "right", outline: "none",
+boxSizing: "border-box", fontFamily: "'Instrument Serif', serif" },
+}),
+d.jsx("span", { style: { fontSize: 12, fontWeight: 600, color: "#059669" }, children: symbol }),
+],
+}),
+],
+});
+}),
+buffer ? d.jsxs("div", {
+style: {
+padding: 12, borderRadius: 12,
+background: "rgba(2,132,199,0.06)",
+display: "flex", alignItems: "center", gap: 10,
+boxSizing: "border-box",
+border: "1px solid rgba(2,132,199,0.15)",
+},
+children: [
+d.jsx("div", {
+style: { width: 34, height: 34, borderRadius: 10,
+background: "rgba(2,132,199,0.15)",
+display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+children: MIcon({ path: ICONS.shield, size: 17, color: "#0284c7" }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0 },
+children: buffer.name || "Amortiguador",
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: "tu colchón mensual",
+}),
+],
+}),
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 4, flexShrink: 0 },
+children: [
+d.jsx("input", {
+type: "text", inputMode: "decimal",
+value: formatAmountES(bufferAmount),
+onChange: function(e) { updateBuffer(e.target.value); },
+style: { width: 80, padding: "6px 8px", borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13, fontWeight: 600,
+color: "#0284c7", textAlign: "right", outline: "none",
+boxSizing: "border-box", fontFamily: "'Instrument Serif', serif" },
+}),
+d.jsx("span", { style: { fontSize: 12, fontWeight: 600, color: "#0284c7" }, children: symbol }),
+],
+}),
+],
+}) : null,
+],
+}),
+}),
+d.jsxs("div", {
+style: { padding: 16, borderTop: "1px solid rgba(0,0,0,0.06)",
+background: "white", flexShrink: 0, boxSizing: "border-box" },
+children: [
+d.jsxs("div", {
+style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+children: [
+d.jsx("span", { style: { fontSize: 12, fontWeight: 600, color: "#64748b" }, children: "Sin asignar:" }),
+d.jsxs("span", {
+style: { fontSize: 14, fontWeight: 700,
+color: remaining < 0 ? "#dc2626" : remaining === 0 ? "#059669" : "#475569" },
+children: [formatAmountES(remaining), " ", symbol],
+}),
+],
+}),
+d.jsx("button", {
+onClick: handleConfirm,
+style: { width: "100%", padding: 12, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg,#10b981,#047857)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+boxShadow: "0 4px 14px rgba(5,150,105,0.3)", boxSizing: "border-box" },
+children: remaining === 0 ? "Confirmar reparto" : (remaining > 0 ? "Confirmar (queda " + formatAmountES(remaining) + " " + symbol + " sin asignar)" : "Has asignado de más"),
+}),
+],
+}),
+],
+}),
+});
+}
+
+function Day1Modal(o) {
+const monthName = (function() {
+const months = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+return months[new Date().getMonth()];
+})();
+return d.jsx("div", {
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 105, padding: 16,
+},
+children: d.jsxs(Y.div, {
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: { background: "white", borderRadius: 20, padding: 22,
+maxWidth: 380, width: "100%", boxSizing: "border-box",
+boxShadow: "0 24px 60px rgba(0,0,0,0.3)" },
+children: [
+d.jsx("div", {
+style: { width: 56, height: 56, borderRadius: "50%",
+background: "linear-gradient(135deg,#10b98122,#04785711)",
+margin: "0 auto 12px",
+display: "flex", alignItems: "center", justifyContent: "center" },
+children: MIcon({ path: ICONS.shield, size: 28, color: "#059669" }),
+}),
+d.jsxs("h2", {
+style: { fontSize: 18, fontWeight: 700, color: "#0f172a",
+textAlign: "center", margin: "0 0 6px",
+fontFamily: "'Instrument Serif', serif" },
+children: ["Empieza ", monthName],
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", textAlign: "center",
+margin: "0 0 18px", lineHeight: 1.5 },
+children: "¿Has cobrado ya tu paga este mes? Te ayudo a registrarla y repartirla entre tus sobres.",
+}),
+d.jsx("button", {
+onClick: o.onYes,
+style: { width: "100%", padding: 12, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg,#10b981,#047857)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box",
+boxShadow: "0 4px 14px rgba(5,150,105,0.3)" },
+children: "Sí, registrar y repartir",
+}),
+d.jsx("button", {
+onClick: o.onAlready,
+style: { width: "100%", padding: 12, borderRadius: 12, border: "none",
+background: "rgba(0,0,0,0.04)",
+color: "#475569", fontSize: 13, fontWeight: 600, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box" },
+children: "Ya está registrada",
+}),
+d.jsx("button", {
+onClick: o.onLater,
+style: { width: "100%", padding: 10, borderRadius: 12, border: "none",
+background: "transparent",
+color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer",
+boxSizing: "border-box" },
+children: "Recordar mañana",
+}),
+],
+}),
+});
+}
+
 function RecurringItemModal(o) {
 const item = o.item || {};
 const isEdit = !!(o.item && o.item.name);
@@ -6614,7 +6980,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v12.0",
+children: "v13.0",
 }),
 ],
 }),
@@ -6639,7 +7005,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v12",
+children: "v13",
 });
 }
 
