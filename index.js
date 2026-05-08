@@ -3546,6 +3546,96 @@ const eurosStr = euros.toLocaleString("de-DE");
 const decStr = String(dec).padStart(2, "0");
 return (negative ? "-" : "") + eurosStr + "," + decStr;
 }
+function MonthSelector(o) {
+const cur = o.value || "2026-01";
+const parts = cur.split("-");
+const year = parseInt(parts[0], 10);
+const month = parseInt(parts[1], 10);
+const months = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const monthName = months[month - 1] || "?";
+const now = new Date();
+const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const isCurrent = cur === curMonth;
+const goPrev = function() {
+let m = month - 1;
+let y = year;
+if (m < 1) { m = 12; y -= 1; }
+o.onChange(y + "-" + String(m).padStart(2, "0"));
+};
+const goNext = function() {
+let m = month + 1;
+let y = year;
+if (m > 12) { m = 1; y += 1; }
+const next = y + "-" + String(m).padStart(2, "0");
+if (next > curMonth) return;
+o.onChange(next);
+};
+const goToday = function() { o.onChange(curMonth); };
+return d.jsxs("div", {
+style: {
+display: "flex", alignItems: "center", justifyContent: "space-between",
+gap: 8, padding: "8px 4px",
+marginBottom: 12,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("button", {
+onClick: goPrev,
+style: {
+width: 32, height: 32, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.04)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center",
+padding: 0, flexShrink: 0,
+},
+children: MIcon({ path: '<polyline points="15 18 9 12 15 6"/>', size: 14, color: "#475569" }),
+}),
+d.jsxs("div", {
+style: {
+flex: 1, textAlign: "center",
+display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+},
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: [monthName, " ", year],
+}),
+isCurrent ? d.jsx("span", {
+style: {
+fontSize: 9, fontWeight: 700, color: "#059669",
+textTransform: "uppercase", letterSpacing: 0.4,
+},
+children: "Mes actual",
+}) : d.jsx("button", {
+onClick: goToday,
+style: {
+fontSize: 9, fontWeight: 600, color: "#0284c7",
+background: "transparent", border: "none", cursor: "pointer",
+padding: 0, textTransform: "uppercase", letterSpacing: 0.4,
+},
+children: "Volver a hoy",
+}),
+],
+}),
+d.jsx("button", {
+onClick: goNext,
+disabled: isCurrent,
+style: {
+width: 32, height: 32, borderRadius: 10, border: "none",
+background: isCurrent ? "rgba(0,0,0,0.02)" : "rgba(0,0,0,0.04)",
+cursor: isCurrent ? "default" : "pointer",
+opacity: isCurrent ? 0.3 : 1,
+display: "flex", alignItems: "center", justifyContent: "center",
+padding: 0, flexShrink: 0,
+},
+children: MIcon({ path: '<polyline points="9 18 15 12 9 6"/>', size: 14, color: "#475569" }),
+}),
+],
+});
+}
+
 function FinanceModule() {
 const navigate = gf();
 const location = ru();
@@ -3562,6 +3652,10 @@ const [showOnboarding, setShowOnboarding] = b.useState(!currency);
 const [showAddModal, setShowAddModal] = b.useState(null);
 const [showDistribute, setShowDistribute] = b.useState(null);
 const [showDay1Banner, setShowDay1Banner] = b.useState(false);
+const [selectedMonth, setSelectedMonth] = b.useState(function() {
+const now = new Date();
+return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+});
 b.useEffect(function () {
 if (!_uid) return;
 let unsub;
@@ -3705,12 +3799,13 @@ let content;
 if (path === "/finanzas/movimientos") {
 content = d.jsx(FinanceMovementsPage, {
 transactions: transactions, currency: currency,
+selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth,
 onDelete: deleteTransaction,
 onAdd: function (type) { setShowAddModal(type); },
 isLoading: !hasLoadedFromFirestore,
 });
 } else if (path === "/finanzas/sobres") {
-content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes });
+content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
 } else if (path === "/finanzas/stats") {
 content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency });
 } else if (path === "/finanzas/mas") {
@@ -3718,6 +3813,7 @@ content = d.jsx(FinanceMorePage, { onChangeCurrency: function () { setShowOnboar
 } else {
 content = d.jsx(FinanceDashboard, {
 transactions: transactions, currency: currency,
+selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth,
 onAdd: function (type) { setShowAddModal(type); },
 onSeeAll: function () { navigate("/finanzas/movimientos"); },
 onDeleteTx: deleteTransaction,
@@ -3741,7 +3837,7 @@ boxSizing: "border-box",
 },
 children: content,
 }),
-d.jsx(FinanceBottomNav, { currentPath: path, navigate: navigate }),d.jsx(VersionBadge, {}),d.jsx(Y.button, {initial: { scale: 0, opacity: 0 },animate: { scale: 1, opacity: 1 },whileTap: { scale: 0.9 },transition: { type: "spring", damping: 18, stiffness: 240 },onClick: function() { navigate("/"); },style: {position: "fixed",bottom: 84, left: 16,width: 44, height: 44,borderRadius: "50%",background: "linear-gradient(135deg, #1e293b, #0f172a)",border: "2px solid rgba(255,255,255,0.95)",boxShadow: "0 4px 16px rgba(15,23,42,0.3), 0 0 0 2px rgba(5,150,105,0.15)",cursor: "pointer",display: "flex", alignItems: "center", justifyContent: "center",padding: 0,zIndex: 50,},children: d.jsx("span", {style: {fontFamily: "'Instrument Serif', serif",fontSize: 22, fontWeight: 700,color: "white", fontStyle: "italic", lineHeight: 1,},children: "M",}),}),
+d.jsx(FinanceBottomNav, { currentPath: path, navigate: navigate }),d.jsx(VersionBadge, {}),d.jsx(Y.button, {initial: { scale: 0, opacity: 0 },animate: { scale: 1, opacity: 1 },whileTap: { scale: 0.9 },transition: { type: "spring", damping: 18, stiffness: 240 },onClick: function() { navigate("/"); },style: {position: "fixed",bottom: 84, left: 16,width: 44, height: 44,borderRadius: "50%",background: "linear-gradient(135deg, #1e293b, #0f172a)",border: "2px solid rgba(255,255,255,0.95)",boxShadow: "0 4px 16px rgba(15,23,42,0.3), 0 0 0 2px rgba(37,99,235,0.15)",cursor: "pointer",display: "flex", alignItems: "center", justifyContent: "center",padding: 0,zIndex: 50,},children: d.jsx("span", {style: {fontFamily: "'Instrument Serif', serif",fontSize: 22, fontWeight: 700,color: "white", fontStyle: "italic", lineHeight: 1,},children: "M",}),}),
 showAddModal ? d.jsx(AddTransactionModal, {
 type: showAddModal,
 currency: currency,
@@ -3904,11 +4000,19 @@ children: "Empezar",
 function FinanceDashboard(o) {
 const symbol = getCurrencySymbol(o.currency);
 let totalCents = 0, monthIncomeCents = 0, monthExpenseCents = 0;
-const now = new Date();
-const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const _now2 = new Date();
+const _todayMonth = _now2.getFullYear() + "-" + String(_now2.getMonth() + 1).padStart(2, "0");
+const curMonth = o.selectedMonth || _todayMonth;
+const isViewingCurrent = curMonth === _todayMonth;
 o.transactions.forEach(function (tx) {
 const sign = tx.type === "income" ? 1 : -1;
+if (isViewingCurrent) {
 totalCents += sign * tx.amountCents;
+} else {
+if (tx.date && tx.date <= curMonth + "-31") {
+totalCents += sign * tx.amountCents;
+}
+}
 if (tx.date && tx.date.startsWith(curMonth)) {
 if (tx.type === "income") monthIncomeCents += tx.amountCents;
 else monthExpenseCents += tx.amountCents;
@@ -3916,6 +4020,7 @@ else monthExpenseCents += tx.amountCents;
 });
 const monthSavingCents = monthIncomeCents - monthExpenseCents;
 const recent = o.transactions.slice()
+.filter(function(tx) { return !tx.date || tx.date.startsWith(curMonth); })
 .sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); })
 .slice(0, 5);
 return d.jsxs("div", {
@@ -3932,9 +4037,10 @@ fontFamily: "'Instrument Serif', serif",
 },
 children: "Finanzas",
 }),
-d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, children: "Tu dinero, organizado" }),
+d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, children: isViewingCurrent ? "Tu dinero, organizado" : "Viendo histórico" }),
 ],
 }),
+o.setSelectedMonth ? d.jsx(MonthSelector, { value: curMonth, onChange: o.setSelectedMonth }) : null,
 d.jsxs(Y.div, {
 initial: { opacity: 0, y: 12 },
 animate: { opacity: 1, y: 0 },
@@ -3952,7 +4058,7 @@ style: {
 fontSize: 11, fontWeight: 700, textTransform: "uppercase",
 letterSpacing: 0.5, color: "#64748b", margin: 0,
 },
-children: "Saldo actual",
+children: isViewingCurrent ? "Saldo actual" : "Saldo a fin de " + curMonth.split("-")[1] + "/" + curMonth.split("-")[0],
 }),
 d.jsxs("h2", {
 style: {
@@ -4293,8 +4399,8 @@ alreadySpent += tx.amountCents;
 });
 }
 const assigned = (function() {
-if (env.monthlyAssignments && typeof env.monthlyAssignments === "object" && env.monthlyAssignments[_curMonth] !== undefined) {
-return env.monthlyAssignments[_curMonth];
+if (env.monthlyAssignments && typeof env.monthlyAssignments === "object" && env.monthlyAssignments[curMonth] !== undefined) {
+return env.monthlyAssignments[curMonth];
 }
 return env.monthlyAmountCents || 0;
 })();
@@ -4569,6 +4675,9 @@ const { user } = ls();
 const _uid = user ? user.uid : null;
 const envelopes = o.envelopes || [];
 const loaded = true;
+const _todayMonth_s = (function() { const _n = new Date(); return _n.getFullYear() + "-" + String(_n.getMonth() + 1).padStart(2, "0"); })();
+const sobCurMonth = o.selectedMonth || _todayMonth_s;
+const sobIsCurrent = sobCurMonth === _todayMonth_s;
 const [showCreate, setShowCreate] = b.useState(false);
 const [editingEnv, setEditingEnv] = b.useState(null);
 const saveEnvelope = function (env) {
@@ -4611,8 +4720,7 @@ Il(_uid, "finance_envelopes", id);
 };
 const calculateSpent = function (envelope, transactions) {
 if (!transactions) return 0;
-const now = new Date();
-const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const curMonth = sobCurMonth;
 let total = 0;
 transactions.forEach(function (tx) {
 if (tx.type !== "expense" || !tx.date || !tx.date.startsWith(curMonth)) return;
@@ -4651,10 +4759,11 @@ d.jsx("p", {
 style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" },
 children: envelopes.length === 0
 ? "Reparte tu dinero en sobres por categoría"
-: "Total asignado: " + formatAmountES(totalAssigned) + " " + getCurrencySymbol(o.currency) + " / mes",
+: (sobIsCurrent ? "Total asignado: " + formatAmountES(totalAssigned) + " " + getCurrencySymbol(o.currency) + " / mes" : "Histórico de sobres"),
 }),
 ],
 }),
+o.setSelectedMonth ? d.jsx(MonthSelector, { value: sobCurMonth, onChange: o.setSelectedMonth }) : null,
 d.jsxs("button", {
 onClick: function () { setShowCreate(true); },
 style: {
@@ -4732,6 +4841,8 @@ envelope: env,
 spentCents: spent,
 currency: o.currency,
 transactions: transactions,
+allEnvelopes: envelopes,
+selectedMonth: sobCurMonth,
 onEdit: function () { setEditingEnv(env); },
 onDelete: function () { deleteEnvelope(env.id); },
 });
@@ -4781,6 +4892,10 @@ function EnvelopeCard(o) {
 const env = o.envelope;
 const cat = getCategoryById(env.categoryId);
 const symbol = getCurrencySymbol(o.currency);
+const _now = new Date();
+const _todayMonth_card = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+const _curMonth = o.selectedMonth || _todayMonth_card;
+const _isCurrentMonth = _curMonth === _todayMonth_card;
 const assigned = (function() {
 if (env.monthlyAssignments && typeof env.monthlyAssignments === "object" && env.monthlyAssignments[_curMonth] !== undefined) {
 return env.monthlyAssignments[_curMonth];
@@ -4794,8 +4909,6 @@ const overspent = spent > assigned;
 const isBuffer = env.isBuffer;
 const allEnvelopes = o.allEnvelopes || [];
 const allTransactions = o.transactions || [];
-const _now = new Date();
-const _curMonth = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
 let bufferCoveredForMe = 0;
 let bufferUsageDetails = [];
 if (isBuffer) {
@@ -4844,15 +4957,16 @@ isPast: itemDay < todayDay,
 let progressColor = cat.color;
 if (pct >= 90) progressColor = "#dc2626";
 else if (pct >= 70) progressColor = "#ea580c";
-const now = new Date();
-const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-const daysLeft = lastDay - now.getDate();
-const curMonth = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+const _selParts = _curMonth.split("-");
+const _selYear = parseInt(_selParts[0], 10);
+const _selMonth = parseInt(_selParts[1], 10);
+const lastDay = new Date(_selYear, _selMonth, 0).getDate();
+const daysLeft = _isCurrentMonth ? (lastDay - _now.getDate()) : 0;
 const recentTxs = (o.transactions || [])
 .filter(function (tx) {
 return tx.type === "expense"
 && tx.categoryId === env.categoryId
-&& tx.date && tx.date.startsWith(curMonth);
+&& tx.date && tx.date.startsWith(_curMonth);
 })
 .sort(function (a, bb) { return (bb.date || "").localeCompare(a.date || ""); })
 .slice(0, 3);
@@ -5022,7 +5136,7 @@ display: "flex", alignItems: "center", gap: 4,
 },
 children: [
 MIcon({ path: ICONS.info || ICONS.other_exp, size: 11, color: "#94a3b8" }),
-daysLeft === 0 ? "último día" : daysLeft + (daysLeft === 1 ? " día resto" : " días resto"),
+_isCurrentMonth ? (daysLeft === 0 ? "último día" : daysLeft + (daysLeft === 1 ? " día resto" : " días resto")) : "mes cerrado",
 ],
 }),
 ],
@@ -6245,8 +6359,12 @@ d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5 }, childre
 });
 }
 function FinanceMovementsPage(o) {
+const _todayMonth_m = (function() { const _n = new Date(); return _n.getFullYear() + "-" + String(_n.getMonth() + 1).padStart(2, "0"); })();
+const curMonthMov = o.selectedMonth || _todayMonth_m;
+const isViewingCurrentMov = curMonthMov === _todayMonth_m;
 const grouped = {};
 o.transactions.slice()
+.filter(function(tx) { return !tx.date || tx.date.startsWith(curMonthMov); })
 .sort(function (a, b) { return (b.date || "").localeCompare(a.date || ""); })
 .forEach(function (tx) {
 const key = tx.date || "Sin fecha";
@@ -6280,10 +6398,16 @@ children: "Movimientos",
 }),
 d.jsxs("p", {
 style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" },
-children: [o.transactions.length, " movimiento", o.transactions.length === 1 ? "" : "s"],
+children: [
+(function() {
+const cnt = o.transactions.filter(function(t) { return !t.date || t.date.startsWith(curMonthMov); }).length;
+return cnt + " movimiento" + (cnt === 1 ? "" : "s") + (isViewingCurrentMov ? "" : " (histórico)");
+})(),
+],
 }),
 ],
 }),
+o.setSelectedMonth ? d.jsx(MonthSelector, { value: curMonthMov, onChange: o.setSelectedMonth }) : null,
 d.jsxs("div", {
 style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
 children: [
@@ -6329,7 +6453,7 @@ d.jsx("div", {
 style: { display: "flex", justifyContent: "center", marginBottom: 8, opacity: 0.4 },
 children: MIcon({ path: ICONS.list, size: 32, color: "#64748b" }),
 }),
-d.jsx("p", { style: { fontSize: 13, color: "#64748b" }, children: "No hay movimientos" }),
+d.jsx("p", { style: { fontSize: 13, color: "#64748b" }, children: isViewingCurrentMov ? "No hay movimientos" : "No hay movimientos en este mes" }),
 ],
 }) : dates.map(function (date) {
 return d.jsxs("div", {
@@ -6980,7 +7104,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v13.0",
+children: "v14",
 }),
 ],
 }),
@@ -7005,7 +7129,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v13",
+children: "v14",
 });
 }
 
