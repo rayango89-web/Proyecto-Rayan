@@ -4680,6 +4680,7 @@ const sobCurMonth = o.selectedMonth || _todayMonth_s;
 const sobIsCurrent = sobCurMonth === _todayMonth_s;
 const [showCreate, setShowCreate] = b.useState(false);
 const [editingEnv, setEditingEnv] = b.useState(null);
+const [reorderMode, setReorderMode] = b.useState(false);
 const saveEnvelope = function (env) {
 if (!_uid) {
 alert("Debes iniciar sesión para guardar sobres");
@@ -4717,6 +4718,40 @@ if (!_uid) return;
 try {
 Il(_uid, "finance_envelopes", id);
 } catch (e) { console.error("Error borrando sobre:", e); }
+};
+
+const moveEnvelope = function(envId, direction) {
+if (!_uid) return;
+const sorted = envelopes.slice().sort(function(a, bb) {
+const sa = (typeof a.sortOrder === "number") ? a.sortOrder : 9999;
+const sb = (typeof bb.sortOrder === "number") ? bb.sortOrder : 9999;
+if (sa !== sb) return sa - sb;
+if (a.isBuffer && !bb.isBuffer) return 1;
+if (!a.isBuffer && bb.isBuffer) return -1;
+return (bb.monthlyAmountCents || 0) - (a.monthlyAmountCents || 0);
+});
+const idx = sorted.findIndex(function(e) { return e.id === envId; });
+if (idx < 0) return;
+const newIdx = direction === "up" ? idx - 1 : idx + 1;
+if (newIdx < 0 || newIdx >= sorted.length) return;
+const reordered = sorted.slice();
+const tmp = reordered[idx];
+reordered[idx] = reordered[newIdx];
+reordered[newIdx] = tmp;
+reordered.forEach(function(env, i) {
+if (env.sortOrder !== i) {
+const updated = Object.assign({}, env, { sortOrder: i });
+try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("reorder:", e); }
+}
+});
+};
+
+const updateEnvelopeAmount = function(envId, newCents) {
+if (!_uid) return;
+const env = envelopes.find(function(e) { return e.id === envId; });
+if (!env) return;
+const updated = Object.assign({}, env, { monthlyAmountCents: newCents });
+try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("update amount:", e); alert("Error al guardar"); }
 };
 const calculateSpent = function (envelope, transactions) {
 if (!transactions) return 0;
@@ -4764,18 +4799,41 @@ children: envelopes.length === 0
 ],
 }),
 o.setSelectedMonth ? d.jsx(MonthSelector, { value: sobCurMonth, onChange: o.setSelectedMonth }) : null,
+d.jsxs("div", {
+style: { display: "flex", gap: 8 },
+children: [
 d.jsxs("button", {
 onClick: function () { setShowCreate(true); },
 style: {
+flex: envelopes.length > 1 ? 1 : "1 1 100%",
 padding: "12px 14px", borderRadius: 12, border: "2px dashed #059669",
 background: "rgba(5,150,105,0.06)",
 color: "#059669", cursor: "pointer", fontSize: 13, fontWeight: 700,
 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-width: "100%", boxSizing: "border-box",
+boxSizing: "border-box",
 },
 children: [
 MIcon({ path: ICONS.plus, size: 16, color: "#059669" }),
 envelopes.length === 0 ? "Crear tu primer sobre" : "Crear sobre",
+],
+}),
+envelopes.length > 1 ? d.jsxs("button", {
+onClick: function() { setReorderMode(!reorderMode); },
+style: {
+flex: 1,
+padding: "12px 14px", borderRadius: 12,
+border: reorderMode ? "2px solid #059669" : "2px solid rgba(0,0,0,0.08)",
+background: reorderMode ? "#059669" : "rgba(0,0,0,0.02)",
+color: reorderMode ? "white" : "#475569",
+cursor: "pointer", fontSize: 13, fontWeight: 700,
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+boxSizing: "border-box",
+},
+children: [
+reorderMode ? null : MIcon({ path: '<polyline points="7 13 12 18 17 13"/><polyline points="7 6 12 11 17 6"/>', size: 14, color: "#475569" }),
+reorderMode ? "✓ Listo" : "Reordenar",
+],
+}) : null,
 ],
 }),
 !loaded ? d.jsx("div", {
@@ -4829,6 +4887,9 @@ style: { display: "flex", flexDirection: "column", gap: 10 },
 children: envelopes
 .slice()
 .sort(function (a, bb) {
+const sa = (typeof a.sortOrder === "number") ? a.sortOrder : 9999;
+const sb = (typeof bb.sortOrder === "number") ? bb.sortOrder : 9999;
+if (sa !== sb) return sa - sb;
 if (a.isBuffer && !bb.isBuffer) return 1;
 if (!a.isBuffer && bb.isBuffer) return -1;
 return (bb.monthlyAmountCents || 0) - (a.monthlyAmountCents || 0);
@@ -4843,6 +4904,10 @@ currency: o.currency,
 transactions: transactions,
 allEnvelopes: envelopes,
 selectedMonth: sobCurMonth,
+reorderMode: reorderMode,
+onMoveUp: function() { moveEnvelope(env.id, "up"); },
+onMoveDown: function() { moveEnvelope(env.id, "down"); },
+onUpdateAmount: function(c) { updateEnvelopeAmount(env.id, c); },
 onEdit: function () { setEditingEnv(env); },
 onDelete: function () { deleteEnvelope(env.id); },
 });
@@ -4888,6 +4953,103 @@ onDelete: function () { deleteEnvelope(editingEnv.id); setEditingEnv(null); },
 ],
 });
 }
+function InlineAmountEditor(o) {
+const [editing, setEditing] = b.useState(false);
+const [value, setValue] = b.useState("");
+const inputRef = b.useRef(null);
+const startEdit = function(ev) {
+if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+setValue(formatAmountES(o.assigned).replace(",00", ""));
+setEditing(true);
+setTimeout(function() {
+if (inputRef.current) {
+inputRef.current.focus();
+inputRef.current.select();
+}
+}, 50);
+};
+const commit = function() {
+const cleaned = String(value).replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+if (!isNaN(num) && num > 0) {
+const cents = Math.round(num * 100);
+if (cents !== o.assigned && o.onSave) {
+o.onSave(cents);
+}
+}
+setEditing(false);
+};
+const cancel = function() { setEditing(false); };
+if (editing) {
+return d.jsxs("div", {
+style: {
+display: "flex", alignItems: "center", gap: 4,
+flexShrink: 0,
+background: "rgba(5,150,105,0.06)",
+padding: "4px 6px",
+borderRadius: 8,
+border: "2px solid #059669",
+},
+children: [
+d.jsx("input", {
+ref: inputRef,
+type: "text",
+inputMode: "decimal",
+value: value,
+onChange: function(e) {
+const v = e.target.value.replace(/[^0-9,.]/g, "");
+setValue(v);
+},
+onBlur: commit,
+onKeyDown: function(e) {
+if (e.key === "Enter") { e.preventDefault(); commit(); }
+if (e.key === "Escape") { e.preventDefault(); cancel(); }
+},
+style: {
+width: 64, padding: "2px 4px",
+fontSize: 14, fontWeight: 700,
+color: "#059669",
+border: "none", outline: "none",
+background: "transparent",
+textAlign: "right",
+fontFamily: "'Instrument Serif', serif",
+},
+}),
+d.jsx("span", {
+style: { fontSize: 13, fontWeight: 600, color: "#059669" },
+children: o.symbol,
+}),
+],
+});
+}
+return d.jsxs("div", {
+onClick: startEdit,
+role: "button",
+tabIndex: 0,
+style: {
+textAlign: "right", flexShrink: 0,
+cursor: "pointer",
+padding: "2px 6px",
+borderRadius: 6,
+margin: "-2px -6px",
+},
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 14, fontWeight: 700,
+color: "#0f172a",
+margin: 0,
+},
+children: [formatAmountES(o.assigned), " ", o.symbol],
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: "/ mes · tap para editar",
+}),
+],
+});
+}
+
 function EnvelopeCard(o) {
 const env = o.envelope;
 const cat = getCategoryById(env.categoryId);
@@ -4954,6 +5116,77 @@ isPast: itemDay < todayDay,
 });
 })
 .sort(function(a, b) { return a.day - b.day; });
+
+if (o.reorderMode) {
+return d.jsxs(Y.div, {
+key: env.id,
+initial: { opacity: 0 },
+animate: { opacity: 1 },
+className: "glass-card",
+style: {
+padding: "12px 14px",
+width: "100%",
+boxSizing: "border-box",
+borderLeft: "3px solid " + cat.color,
+display: "flex", alignItems: "center", gap: 10,
+},
+children: [
+d.jsx("div", {
+style: {
+width: 36, height: 36, borderRadius: 10,
+background: cat.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({
+path: ICONS[cat.iconKey] || ICONS.other_exp,
+size: 18, color: cat.color,
+}),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 14, fontWeight: 700, color: "#0f172a",
+margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+},
+children: env.name || cat.name,
+}),
+d.jsxs("p", {
+style: { fontSize: 11, color: "#94a3b8", margin: "2px 0 0" },
+children: [formatAmountES(assigned), " ", symbol, " / mes"],
+}),
+],
+}),
+d.jsxs("div", {
+style: { display: "flex", gap: 4, flexShrink: 0 },
+children: [
+d.jsx("button", {
+onClick: o.onMoveUp,
+style: {
+width: 38, height: 38, borderRadius: 10, border: "none",
+background: "rgba(5,150,105,0.08)",
+display: "flex", alignItems: "center", justifyContent: "center",
+cursor: "pointer", padding: 0,
+},
+children: MIcon({ path: '<polyline points="18 15 12 9 6 15"/>', size: 18, color: "#059669" }),
+}),
+d.jsx("button", {
+onClick: o.onMoveDown,
+style: {
+width: 38, height: 38, borderRadius: 10, border: "none",
+background: "rgba(5,150,105,0.08)",
+display: "flex", alignItems: "center", justifyContent: "center",
+cursor: "pointer", padding: 0,
+},
+children: MIcon({ path: '<polyline points="6 9 12 15 18 9"/>', size: 18, color: "#059669" }),
+}),
+],
+}),
+],
+});
+}
 let progressColor = cat.color;
 if (pct >= 90) progressColor = "#dc2626";
 else if (pct >= 70) progressColor = "#ea580c";
@@ -5050,22 +5283,10 @@ children: isBuffer
 }),
 ],
 }),
-d.jsxs("div", {
-style: { textAlign: "right", flexShrink: 0 },
-children: [
-d.jsxs("p", {
-style: {
-fontSize: 14, fontWeight: 700,
-color: "#0f172a",
-margin: 0,
-},
-children: [formatAmountES(assigned), " ", symbol],
-}),
-d.jsx("p", {
-style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
-children: "/ mes",
-}),
-],
+d.jsx(InlineAmountEditor, {
+assigned: assigned,
+symbol: symbol,
+onSave: o.onUpdateAmount,
 }),
 ],
 }),
@@ -7104,7 +7325,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v14",
+children: "v15",
 }),
 ],
 }),
@@ -7129,7 +7350,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v14",
+children: "v15",
 });
 }
 
