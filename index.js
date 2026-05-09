@@ -3807,7 +3807,7 @@ isLoading: !hasLoadedFromFirestore,
 } else if (path === "/finanzas/sobres") {
 content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
 } else if (path === "/finanzas/stats") {
-content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency });
+content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
 } else if (path === "/finanzas/mas") {
 content = d.jsx(FinanceMorePage, { onChangeCurrency: function () { setShowOnboarding(true); } });
 } else {
@@ -6703,8 +6703,66 @@ return TransactionItem({ tx: tx, currency: o.currency, onDelete: o.onDelete });
 });
 }
 function FinanceStatsPage(o) {
+const _now = new Date();
+const _todayMonth = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+const curMonth = o.selectedMonth || _todayMonth;
+const isCurrent = curMonth === _todayMonth;
+const symbol = getCurrencySymbol(o.currency);
+const transactions = o.transactions || [];
+let monthIncome = 0, monthExpense = 0;
+const byCategory = {};
+transactions.forEach(function(tx) {
+if (!tx.date || !tx.date.startsWith(curMonth)) return;
+if (tx.type === "income") {
+monthIncome += tx.amountCents;
+} else if (tx.type === "expense") {
+monthExpense += tx.amountCents;
+if (!byCategory[tx.categoryId]) byCategory[tx.categoryId] = 0;
+byCategory[tx.categoryId] += tx.amountCents;
+}
+});
+const monthSaving = monthIncome - monthExpense;
+const savingPct = monthIncome > 0 ? Math.round((monthSaving / monthIncome) * 100) : 0;
+const catEntries = Object.keys(byCategory)
+.map(function(catId) {
+return {
+id: catId,
+cat: getCategoryById(catId),
+amount: byCategory[catId],
+pct: monthExpense > 0 ? (byCategory[catId] / monthExpense) * 100 : 0,
+};
+})
+.sort(function(a, b) { return b.amount - a.amount; });
+const last6Months = [];
+const _selParts = curMonth.split("-");
+const baseDate = new Date(parseInt(_selParts[0]), parseInt(_selParts[1]) - 1, 1);
+for (let i = 5; i >= 0; i--) {
+const d = new Date(baseDate);
+d.setMonth(d.getMonth() - i);
+const m = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+let inc = 0, exp = 0;
+transactions.forEach(function(tx) {
+if (!tx.date || !tx.date.startsWith(m)) return;
+if (tx.type === "income") inc += tx.amountCents;
+else if (tx.type === "expense") exp += tx.amountCents;
+});
+const monthShort = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][d.getMonth()];
+last6Months.push({
+month: m,
+label: monthShort,
+income: inc,
+expense: exp,
+saving: inc - exp,
+});
+}
+let totalSaldo = 0;
+transactions.forEach(function(tx) {
+if (tx.date && tx.date <= curMonth + "-31") {
+totalSaldo += (tx.type === "income" ? 1 : -1) * tx.amountCents;
+}
+});
 return d.jsxs("div", {
-style: { display: "flex", flexDirection: "column", gap: 16 },
+style: { display: "flex", flexDirection: "column", gap: 14 },
 children: [
 d.jsxs(Y.div, {
 initial: { opacity: 0, y: -8 },
@@ -6717,31 +6775,392 @@ fontFamily: "'Instrument Serif', serif",
 },
 children: "Estadísticas",
 }),
-d.jsx("p", { style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" }, children: "Análisis de tus finanzas" }),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" },
+children: isCurrent ? "Análisis del mes actual" : "Análisis histórico",
+}),
 ],
 }),
-d.jsxs("div", {
+o.setSelectedMonth ? d.jsx(MonthSelector, { value: curMonth, onChange: o.setSelectedMonth }) : null,
+transactions.length === 0 ? d.jsxs("div", {
 className: "glass-card",
-style: {
-padding: 24, textAlign: "center",
-background: "linear-gradient(135deg,#10b98122,#04785708)",
-borderLeft: "3px solid #059669",
-boxSizing: "border-box",
-},
+style: { padding: 28, textAlign: "center", boxSizing: "border-box" },
 children: [
 d.jsx("div", {
 style: {
 width: 56, height: 56, borderRadius: "50%",
-background: "linear-gradient(135deg,#10b98133,#04785711)",
+background: "rgba(5,150,105,0.1)",
 margin: "0 auto 12px",
 display: "flex", alignItems: "center", justifyContent: "center",
 },
 children: MIcon({ path: ICONS.pie, size: 28, color: "#059669" }),
 }),
-d.jsx("h2", { style: { fontSize: 16, fontWeight: 700, color: "#0f172a", marginBottom: 8 }, children: "Próximamente" }),
 d.jsx("p", {
-style: { fontSize: 13, color: "#64748b", lineHeight: 1.5 },
-children: "Gráficas de evolución, distribución por categoría y comparativas mes a mes.",
+style: { fontSize: 13, color: "#64748b" },
+children: "Aún no tienes movimientos para analizar",
+}),
+],
+}) : d.jsxs(d.Fragment, {
+children: [
+d.jsxs("div", {
+style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+children: [
+d.jsxs("div", {
+className: "glass-card",
+style: {
+padding: 14, boxSizing: "border-box",
+borderLeft: "3px solid #16a34a",
+},
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "0 0 4px",
+},
+children: "Ingresos",
+}),
+d.jsxs("p", {
+style: {
+fontSize: 18, fontWeight: 700, color: "#16a34a", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+wordBreak: "break-all",
+},
+children: ["+", formatAmountES(monthIncome), " ", symbol],
+}),
+],
+}),
+d.jsxs("div", {
+className: "glass-card",
+style: {
+padding: 14, boxSizing: "border-box",
+borderLeft: "3px solid #dc2626",
+},
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "0 0 4px",
+},
+children: "Gastos",
+}),
+d.jsxs("p", {
+style: {
+fontSize: 18, fontWeight: 700, color: "#dc2626", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+wordBreak: "break-all",
+},
+children: ["-", formatAmountES(monthExpense), " ", symbol],
+}),
+],
+}),
+],
+}),
+d.jsxs("div", {
+className: "glass-card",
+style: {
+padding: 16, boxSizing: "border-box",
+borderLeft: "3px solid " + (monthSaving >= 0 ? "#059669" : "#dc2626"),
+background: monthSaving >= 0
+? "linear-gradient(135deg, #10b98122, #04785708)"
+: "linear-gradient(135deg, #dc262615, #dc262605)",
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between" },
+children: [
+d.jsxs("div", {
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", margin: "0 0 4px",
+},
+children: "Ahorro del mes",
+}),
+d.jsxs("p", {
+style: {
+fontSize: 24, fontWeight: 700,
+color: monthSaving >= 0 ? "#059669" : "#dc2626",
+margin: 0,
+fontFamily: "'Instrument Serif', serif",
+wordBreak: "break-all",
+},
+children: [monthSaving >= 0 ? "+" : "", formatAmountES(monthSaving), " ", symbol],
+}),
+],
+}),
+monthIncome > 0 ? d.jsxs("div", {
+style: { textAlign: "right" },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 22, fontWeight: 700,
+color: monthSaving >= 0 ? "#059669" : "#dc2626",
+margin: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: [savingPct, "%"],
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: 0 },
+children: "de los ingresos",
+}),
+],
+}) : null,
+],
+}),
+],
+}),
+catEntries.length > 0 ? d.jsxs("div", {
+className: "glass-card",
+style: { padding: 16, boxSizing: "border-box" },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", margin: "0 0 12px",
+display: "flex", alignItems: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.pie, size: 12, color: "#64748b" }),
+"Gastos por categoría",
+],
+}),
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 16 },
+children: [
+PieChartSVG({ entries: catEntries, totalCents: monthExpense }),
+d.jsx("div", {
+style: { flex: 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 },
+children: catEntries.slice(0, 5).map(function(e) {
+return d.jsxs("div", {
+key: e.id,
+style: {
+display: "flex", alignItems: "center", gap: 6,
+fontSize: 11,
+},
+children: [
+d.jsx("div", {
+style: {
+width: 10, height: 10, borderRadius: 3,
+background: e.cat.color,
+flexShrink: 0,
+},
+}),
+d.jsx("span", {
+style: {
+flex: 1, color: "#475569",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+},
+children: e.cat.name,
+}),
+d.jsxs("span", {
+style: { fontWeight: 700, color: "#0f172a", flexShrink: 0 },
+children: [Math.round(e.pct), "%"],
+}),
+],
+}, e.id);
+}),
+}),
+],
+}),
+],
+}) : null,
+catEntries.length > 0 ? d.jsxs("div", {
+className: "glass-card",
+style: { padding: 16, boxSizing: "border-box" },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", margin: "0 0 12px",
+display: "flex", alignItems: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.list, size: 12, color: "#64748b" }),
+"Top categorías",
+],
+}),
+d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 10 },
+children: catEntries.slice(0, 5).map(function(e) {
+return d.jsxs("div", {
+key: e.id,
+children: [
+d.jsxs("div", {
+style: {
+display: "flex", justifyContent: "space-between", alignItems: "center",
+marginBottom: 4, fontSize: 12,
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 8, minWidth: 0 },
+children: [
+d.jsx("div", {
+style: {
+width: 24, height: 24, borderRadius: 7,
+background: e.cat.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({
+path: ICONS[e.cat.iconKey] || ICONS.other_exp,
+size: 13, color: e.cat.color,
+}),
+}),
+d.jsx("span", {
+style: {
+fontWeight: 600, color: "#0f172a",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+},
+children: e.cat.name,
+}),
+],
+}),
+d.jsxs("span", {
+style: { fontWeight: 700, color: "#dc2626", flexShrink: 0 },
+children: [formatAmountES(e.amount), " ", symbol],
+}),
+],
+}),
+d.jsx("div", {
+style: {
+height: 6, background: "rgba(0,0,0,0.05)", borderRadius: 3,
+overflow: "hidden",
+},
+children: d.jsx("div", {
+style: {
+height: "100%", width: e.pct + "%",
+background: e.cat.color,
+borderRadius: 3,
+transition: "width 0.4s",
+},
+}),
+}),
+],
+}, e.id);
+}),
+}),
+],
+}) : null,
+d.jsxs("div", {
+className: "glass-card",
+style: { padding: 16, boxSizing: "border-box" },
+children: [
+d.jsxs("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", margin: "0 0 12px",
+display: "flex", alignItems: "center", gap: 6,
+},
+children: [
+MIcon({ path: ICONS.trending_up, size: 12, color: "#64748b" }),
+"Últimos 6 meses",
+],
+}),
+BarChartSVG({ data: last6Months, currency: o.currency }),
+],
+}),
+],
+}),
+],
+});
+}
+function PieChartSVG(o) {
+const size = 110;
+const cx = size / 2, cy = size / 2;
+const radius = 48;
+const innerRadius = 28;
+const total = o.totalCents || 1;
+let acc = 0;
+const slices = o.entries.map(function(e, i) {
+const startAngle = (acc / total) * Math.PI * 2 - Math.PI / 2;
+acc += e.amount;
+const endAngle = (acc / total) * Math.PI * 2 - Math.PI / 2;
+const x1 = cx + radius * Math.cos(startAngle);
+const y1 = cy + radius * Math.sin(startAngle);
+const x2 = cx + radius * Math.cos(endAngle);
+const y2 = cy + radius * Math.sin(endAngle);
+const x3 = cx + innerRadius * Math.cos(endAngle);
+const y3 = cy + innerRadius * Math.sin(endAngle);
+const x4 = cx + innerRadius * Math.cos(startAngle);
+const y4 = cy + innerRadius * Math.sin(startAngle);
+const largeArc = (endAngle - startAngle) > Math.PI ? 1 : 0;
+const path = "M " + x1 + " " + y1 +
+" A " + radius + " " + radius + " 0 " + largeArc + " 1 " + x2 + " " + y2 +
+" L " + x3 + " " + y3 +
+" A " + innerRadius + " " + innerRadius + " 0 " + largeArc + " 0 " + x4 + " " + y4 +
+" Z";
+return { path: path, color: e.cat.color, key: e.id };
+});
+return d.jsx("svg", {
+width: size, height: size, viewBox: "0 0 " + size + " " + size,
+style: { flexShrink: 0 },
+children: slices.map(function(s) {
+return d.jsx("path", { d: s.path, fill: s.color, stroke: "white", strokeWidth: 1.5 }, s.key);
+}),
+});
+}
+function BarChartSVG(o) {
+const data = o.data || [];
+const w = 320, h = 140;
+const padTop = 10, padBottom = 28, padLeft = 4, padRight = 4;
+const chartW = w - padLeft - padRight;
+const chartH = h - padTop - padBottom;
+let maxVal = 0;
+data.forEach(function(d) {
+if (d.income > maxVal) maxVal = d.income;
+if (d.expense > maxVal) maxVal = d.expense;
+});
+if (maxVal === 0) maxVal = 1;
+const barGroupW = chartW / data.length;
+const barW = (barGroupW - 6) / 2;
+return d.jsxs("svg", {
+width: "100%", viewBox: "0 0 " + w + " " + h,
+preserveAspectRatio: "xMidYMid meet",
+style: { display: "block" },
+children: [
+data.map(function(item, i) {
+const groupX = padLeft + i * barGroupW + barGroupW / 2;
+const incomeH = (item.income / maxVal) * chartH;
+const expenseH = (item.expense / maxVal) * chartH;
+const incomeY = padTop + chartH - incomeH;
+const expenseY = padTop + chartH - expenseH;
+return d.jsxs("g", {
+children: [
+d.jsx("rect", {
+x: groupX - barW - 1, y: incomeY,
+width: barW, height: Math.max(2, incomeH),
+fill: "#16a34a", rx: 3,
+}),
+d.jsx("rect", {
+x: groupX + 1, y: expenseY,
+width: barW, height: Math.max(2, expenseH),
+fill: "#dc2626", rx: 3,
+}),
+d.jsx("text", {
+x: groupX, y: h - 12,
+textAnchor: "middle",
+fontSize: 10, fill: "#64748b",
+fontWeight: 600,
+children: item.label,
+}),
+],
+}, i);
+}),
+d.jsxs("g", {
+children: [
+d.jsx("rect", { x: padLeft, y: h - 4, width: 8, height: 4, fill: "#16a34a", rx: 1 }),
+d.jsx("text", {
+x: padLeft + 12, y: h - 1,
+fontSize: 9, fill: "#64748b",
+children: "Ingresos",
+}),
+d.jsx("rect", { x: padLeft + 60, y: h - 4, width: 8, height: 4, fill: "#dc2626", rx: 1 }),
+d.jsx("text", {
+x: padLeft + 72, y: h - 1,
+fontSize: 9, fill: "#64748b",
+children: "Gastos",
 }),
 ],
 }),
@@ -7325,7 +7744,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v15",
+children: "v16",
 }),
 ],
 }),
@@ -7350,7 +7769,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v15",
+children: "v16",
 });
 }
 
