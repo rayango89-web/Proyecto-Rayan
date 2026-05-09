@@ -3866,7 +3866,19 @@ return;
 }
 setShowAddModal(null);
 if (newTx.type === "income" && Array.isArray(envelopes) && envelopes.length > 0) {
+const absorbBuffer = envelopes.find(function(e) { return e.isBuffer && e.absorbLeftover; });
+if (absorbBuffer) {
+const _now = new Date();
+const cm = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+const existingAssign = (absorbBuffer.monthlyAssignments && absorbBuffer.monthlyAssignments[cm] !== undefined)
+? absorbBuffer.monthlyAssignments[cm] : (absorbBuffer.monthlyAmountCents || 0);
+const newAssignments = Object.assign({}, absorbBuffer.monthlyAssignments || {});
+newAssignments[cm] = existingAssign + newTx.amountCents;
+const updated = Object.assign({}, absorbBuffer, { monthlyAssignments: newAssignments });
+try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("absorb:", e); }
+} else {
 setTimeout(function() { setShowDistribute(newTx); }, 250);
+}
 }
 };
 const deleteTransaction = function (id) {
@@ -3893,7 +3905,34 @@ onTransfer: function() { setShowTransferModal(true); },
 isLoading: !hasLoadedFromFirestore,
 });
 } else if (path === "/finanzas/sobres") {
-content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
+content = d.jsx(FinanceSobresPage, {
+transactions: transactions,
+currency: currency,
+envelopes: envelopes,
+selectedMonth: selectedMonth,
+setSelectedMonth: setSelectedMonth,
+onRequestDistribute: function() {
+const _now = new Date();
+const cm = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+let totalIncome = 0, totalAssigned = 0;
+transactions.forEach(function(tx) {
+if (tx.type === "income" && tx.date && tx.date.startsWith(cm)) totalIncome += tx.amountCents;
+});
+envelopes.forEach(function(env) {
+if (env.monthlyAssignments && env.monthlyAssignments[cm] !== undefined) {
+totalAssigned += env.monthlyAssignments[cm];
+}
+});
+const unassignedAmount = Math.max(0, totalIncome - totalAssigned);
+if (unassignedAmount <= 0) return;
+setShowDistribute({
+type: "income",
+amountCents: unassignedAmount,
+date: _now.toISOString().slice(0,10),
+isVirtual: true,
+});
+},
+});
 } else if (path === "/finanzas/stats") {
 content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
 } else if (path === "/finanzas/asistente") {
@@ -4811,6 +4850,7 @@ const sobIsCurrent = sobCurMonth === _todayMonth_s;
 const [showCreate, setShowCreate] = b.useState(false);
 const [editingEnv, setEditingEnv] = b.useState(null);
 const [reorderMode, setReorderMode] = b.useState(false);
+const [movingEnv, setMovingEnv] = b.useState(null);
 const saveEnvelope = function (env) {
 if (!_uid) {
 alert("Debes iniciar sesión para guardar sobres");
@@ -4883,6 +4923,49 @@ if (!env) return;
 const updated = Object.assign({}, env, { monthlyAmountCents: newCents });
 try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("update amount:", e); alert("Error al guardar"); }
 };
+
+const handleMoveBetween = function(payload) {
+if (!_uid) return;
+const sourceEnv = envelopes.find(function(e) { return e.id === payload.sourceId; });
+const destEnv = envelopes.find(function(e) { return e.id === payload.destId; });
+if (!sourceEnv || !destEnv) return;
+const getAssigned = function(env) {
+if (env.monthlyAssignments && env.monthlyAssignments[sobCurMonth] !== undefined) {
+return env.monthlyAssignments[sobCurMonth];
+}
+return env.monthlyAmountCents || 0;
+};
+const sourceCurrent = getAssigned(sourceEnv);
+const destCurrent = getAssigned(destEnv);
+const sourceNew = sourceCurrent - payload.amountCents;
+const destNew = destCurrent + payload.amountCents;
+const sourceAssignments = Object.assign({}, sourceEnv.monthlyAssignments || {});
+sourceAssignments[sobCurMonth] = sourceNew;
+const destAssignments = Object.assign({}, destEnv.monthlyAssignments || {});
+destAssignments[sobCurMonth] = destNew;
+try {
+Cl(_uid, "finance_envelopes", Object.assign({}, sourceEnv, { monthlyAssignments: sourceAssignments }));
+Cl(_uid, "finance_envelopes", Object.assign({}, destEnv, { monthlyAssignments: destAssignments }));
+} catch(e) { console.error("move:", e); alert("Error al mover"); }
+setMovingEnv(null);
+};
+
+const calcUnassigned = function() {
+let totalIncome = 0;
+let totalAssigned = 0;
+transactions.forEach(function(tx) {
+if (tx.type === "income" && tx.date && tx.date.startsWith(sobCurMonth)) {
+totalIncome += tx.amountCents;
+}
+});
+envelopes.forEach(function(env) {
+if (env.monthlyAssignments && env.monthlyAssignments[sobCurMonth] !== undefined) {
+totalAssigned += env.monthlyAssignments[sobCurMonth];
+}
+});
+return Math.max(0, totalIncome - totalAssigned);
+};
+const unassigned = calcUnassigned();
 const calculateSpent = function (envelope, transactions) {
 if (!transactions) return 0;
 const curMonth = sobCurMonth;
@@ -5012,9 +5095,16 @@ d.jsx("p", { style: { fontSize: 12, color: "#475569", lineHeight: 1.5, margin: "
 ],
 }),
 ],
-}) : d.jsx("div", {
+}) : d.jsxs("div", {
 style: { display: "flex", flexDirection: "column", gap: 10 },
-children: envelopes
+children: [
+(unassigned > 0 && sobIsCurrent && !reorderMode && o.onRequestDistribute) ? d.jsx(UnassignedCard, {
+key: "unassigned",
+amount: unassigned,
+currency: o.currency,
+onDistribute: o.onRequestDistribute,
+}) : null,
+envelopes
 .slice()
 .sort(function (a, bb) {
 const sa = (typeof a.sortOrder === "number") ? a.sortOrder : 9999;
@@ -5039,9 +5129,11 @@ onMoveUp: function() { moveEnvelope(env.id, "up"); },
 onMoveDown: function() { moveEnvelope(env.id, "down"); },
 onUpdateAmount: function(c) { updateEnvelopeAmount(env.id, c); },
 onEdit: function () { setEditingEnv(env); },
+onMoveBetween: function() { setMovingEnv(env); },
 onDelete: function () { deleteEnvelope(env.id); },
 });
 }),
+],
 }),
 envelopes.length > 0 ? d.jsxs("div", {
 className: "glass-card",
@@ -5079,6 +5171,13 @@ existingEnvelopes: envelopes,
 onClose: function () { setEditingEnv(null); },
 onSave: saveEnvelope,
 onDelete: function () { deleteEnvelope(editingEnv.id); setEditingEnv(null); },
+}) : null,
+movingEnv ? d.jsx(MoveBetweenEnvelopesModal, {
+sourceEnvelope: movingEnv,
+envelopes: envelopes,
+currency: o.currency,
+onClose: function() { setMovingEnv(null); },
+onConfirm: handleMoveBetween,
 }) : null,
 ],
 });
@@ -5650,8 +5749,11 @@ children: ["-", formatAmountES(tx.amountCents), " ", symbol],
 d.jsx("div", {
 style: {
 padding: "0 12px 12px",
+display: "grid", gridTemplateColumns: o.onMoveBetween ? "1fr 1fr" : "1fr",
+gap: 6,
 },
-children: d.jsxs("button", {
+children: [
+d.jsxs("button", {
 onClick: o.onEdit,
 style: {
 width: "100%", padding: "10px 12px", borderRadius: 10,
@@ -5663,9 +5765,25 @@ display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
 },
 children: [
 MIcon({ path: ICONS.edit, size: 13, color: "#059669" }),
-"Editar sobre",
+"Editar",
 ],
 }),
+o.onMoveBetween ? d.jsxs("button", {
+onClick: o.onMoveBetween,
+style: {
+width: "100%", padding: "10px 12px", borderRadius: 10,
+border: "1px solid rgba(124,58,237,0.2)",
+background: "rgba(124,58,237,0.05)",
+color: "#7c3aed", fontSize: 12, fontWeight: 600,
+cursor: "pointer", boxSizing: "border-box",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+},
+children: [
+MIcon({ path: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', size: 13, color: "#7c3aed" }),
+"Mover",
+],
+}) : null,
+],
 }),
 ],
 });
@@ -6171,6 +6289,7 @@ const [recurringItems, setRecurringItems] = b.useState(function() {
 return (o.envelope && Array.isArray(o.envelope.recurringItems)) ? o.envelope.recurringItems.slice() : [];
 });
 const [showRecModal, setShowRecModal] = b.useState(null);
+const [absorbLeftover, setAbsorbLeftover] = b.useState(o.envelope ? !!o.envelope.absorbLeftover : false);
 const symbol = getCurrencySymbol(o.currency);
 const handleSave = function () {
 const cleaned = amount.replace(/\./g, "").replace(",", ".");
@@ -6194,6 +6313,7 @@ monthlyAmountCents: cents,
 isBuffer: isBuffer,
 accumulate: accumulate,
 recurringItems: recurringItems,
+absorbLeftover: !!isBuffer && absorbLeftover,
 };
 if (o.envelope) {
 payload.id = o.envelope.id;
@@ -6496,6 +6616,53 @@ boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
 }),
 ],
 }),
+isBuffer ? d.jsxs("button", {
+onClick: function() { setAbsorbLeftover(!absorbLeftover); },
+style: {
+width: "100%", padding: 12, borderRadius: 12,
+border: "1px solid rgba(0,0,0,0.08)",
+background: "white", cursor: "pointer", boxSizing: "border-box",
+display: "flex", alignItems: "center", justifyContent: "space-between",
+marginBottom: 14, textAlign: "left",
+},
+children: [
+d.jsxs("div", {
+style: { flex: 1, paddingRight: 10 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 13, fontWeight: 700,
+color: absorbLeftover ? "#0284c7" : "#0f172a",
+margin: "0 0 2px",
+},
+children: "Absorber sobrante automáticamente",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.4 },
+children: "Cuando metas un ingreso, lo no asignado a sobres se enviará a este amortiguador sin preguntarte.",
+}),
+],
+}),
+d.jsx("div", {
+style: {
+width: 36, height: 22, borderRadius: 11,
+background: absorbLeftover ? "#0284c7" : "rgba(0,0,0,0.15)",
+position: "relative", flexShrink: 0,
+transition: "background 0.2s",
+},
+children: d.jsx("div", {
+style: {
+position: "absolute", top: 2,
+left: absorbLeftover ? 16 : 2,
+width: 18, height: 18, borderRadius: "50%",
+background: "white",
+transition: "left 0.2s",
+boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+},
+}),
+}),
+],
+}) : null,
 d.jsxs("div", {
 style: { marginBottom: 14 },
 children: [
@@ -8625,6 +8792,319 @@ children: "Confirmar transferencia",
 }),
 });
 }
+function UnassignedCard(o) {
+const symbol = getCurrencySymbol(o.currency);
+return d.jsxs(Y.div, {
+initial: { opacity: 0, y: 6 },
+animate: { opacity: 1, y: 0 },
+className: "glass-card",
+style: {
+padding: 14, boxSizing: "border-box",
+borderLeft: "3px solid #f59e0b",
+background: "linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02))",
+display: "flex", flexDirection: "column", gap: 10,
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 10 },
+children: [
+d.jsx("div", {
+style: {
+width: 38, height: 38, borderRadius: 12,
+background: "rgba(245,158,11,0.15)",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: ICONS.sparkles, size: 18, color: "#f59e0b" }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 700, color: "#0f172a", margin: 0 },
+children: "Sin asignar este mes",
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: "Dinero ingresado que no has repartido en sobres",
+}),
+],
+}),
+d.jsxs("p", {
+style: {
+fontSize: 18, fontWeight: 700, color: "#f59e0b", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+flexShrink: 0,
+},
+children: [formatAmountES(o.amount), " ", symbol],
+}),
+],
+}),
+d.jsxs("button", {
+onClick: o.onDistribute,
+style: {
+padding: "8px 12px", borderRadius: 10, border: "none",
+background: "#f59e0b",
+color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+boxSizing: "border-box",
+boxShadow: "0 4px 12px rgba(245,158,11,0.3)",
+},
+children: [
+MIcon({ path: ICONS.package, size: 13, color: "white" }),
+"Repartir ahora",
+],
+}),
+],
+});
+}
+function MoveBetweenEnvelopesModal(o) {
+const sourceEnv = o.sourceEnvelope;
+const allEnvelopes = (o.envelopes || []).filter(function(e) { return e.id !== sourceEnv.id; });
+const symbol = getCurrencySymbol(o.currency);
+const _now = new Date();
+const curMonth = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+const getAssigned = function(env) {
+if (env.monthlyAssignments && env.monthlyAssignments[curMonth] !== undefined) {
+return env.monthlyAssignments[curMonth];
+}
+return env.monthlyAmountCents || 0;
+};
+const sourceAssigned = getAssigned(sourceEnv);
+const [destId, setDestId] = b.useState(allEnvelopes[0] ? allEnvelopes[0].id : null);
+const [amount, setAmount] = b.useState("");
+const handleSave = function() {
+if (!destId) { alert("Selecciona un sobre destino"); return; }
+const cleaned = amount.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+if (!num || num <= 0) { alert("Importe inválido"); return; }
+const cents = Math.round(num * 100);
+if (cents > sourceAssigned) {
+if (!confirm("Vas a mover más de lo que tiene asignado este sobre. ¿Continuar?")) return;
+}
+o.onConfirm({
+sourceId: sourceEnv.id,
+destId: destId,
+amountCents: cents,
+});
+};
+if (allEnvelopes.length === 0) {
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 200, padding: 16,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: {
+background: "white", borderRadius: 20, padding: 22,
+maxWidth: 360, width: "100%", boxSizing: "border-box",
+boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+},
+children: [
+d.jsx("h2", {
+style: { fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 8px" },
+children: "Necesitas más sobres",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", margin: "0 0 16px", lineHeight: 1.5 },
+children: "Para mover dinero entre sobres, necesitas tener al menos 2.",
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: "100%", padding: 12, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", color: "#475569",
+fontSize: 13, fontWeight: 600, cursor: "pointer",
+boxSizing: "border-box",
+},
+children: "Entendido",
+}),
+],
+}),
+});
+}
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "flex-end", justifyContent: "center",
+zIndex: 110,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { y: "100%" },
+animate: { y: 0 },
+style: {
+background: "white",
+borderTopLeftRadius: 24, borderTopRightRadius: 24,
+maxWidth: 520, width: "100%",
+maxHeight: "90vh",
+display: "flex", flexDirection: "column",
+boxShadow: "0 -24px 60px rgba(0,0,0,0.2)",
+},
+children: [
+d.jsxs("div", {
+style: { padding: "20px 20px 12px", flexShrink: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+children: [
+d.jsxs("h2", {
+style: { fontSize: 17, fontWeight: 700, color: "#7c3aed", margin: 0,
+display: "flex", alignItems: "center", gap: 8 },
+children: [
+MIcon({ path: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', size: 18, color: "#7c3aed" }),
+"Mover dinero",
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 30, height: 30, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 14, color: "#64748b" }),
+}),
+],
+}),
+d.jsxs("p", {
+style: { fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 },
+children: [
+"Origen: ",
+d.jsx("span", { style: { fontWeight: 700, color: "#0f172a" }, children: sourceEnv.name }),
+" · Asignado este mes: ",
+d.jsxs("span", { style: { fontWeight: 700, color: "#0f172a" }, children: [formatAmountES(sourceAssigned), " ", symbol] }),
+],
+}),
+],
+}),
+d.jsxs("div", {
+style: { flex: 1, overflow: "auto", padding: "0 20px 16px" },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6,
+},
+children: "Cantidad a mover",
+}),
+d.jsxs("div", {
+style: {
+padding: "12px", borderRadius: 12, marginBottom: 14,
+background: "rgba(124,58,237,0.06)",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("input", {
+type: "text", inputMode: "decimal", placeholder: "0",
+value: amount,
+onChange: function(e) {
+const v = e.target.value.replace(/[^0-9,.]/g, "");
+setAmount(v);
+},
+style: {
+fontSize: 24, fontWeight: 700, border: "none", background: "transparent",
+outline: "none", textAlign: "right", color: "#7c3aed",
+fontFamily: "'Instrument Serif', serif", width: "60%",
+},
+}),
+d.jsx("span", {
+style: { fontSize: 20, fontWeight: 600, color: "#7c3aed" },
+children: symbol,
+}),
+],
+}),
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6,
+},
+children: "Destino",
+}),
+d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 6 },
+children: allEnvelopes.map(function(env) {
+const cat = getCategoryById(env.categoryId);
+const isSelected = destId === env.id;
+const envAssigned = getAssigned(env);
+return d.jsxs("button", {
+key: env.id,
+onClick: function() { setDestId(env.id); },
+style: {
+padding: 10, borderRadius: 10,
+border: isSelected ? "2px solid " + (env.isBuffer ? "#0284c7" : cat.color) : "1px solid rgba(0,0,0,0.08)",
+background: isSelected ? (env.isBuffer ? "rgba(2,132,199,0.06)" : cat.color + "0a") : "white",
+cursor: "pointer",
+display: "flex", alignItems: "center", gap: 10,
+boxSizing: "border-box", textAlign: "left", width: "100%",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 32, height: 32, borderRadius: 10,
+background: env.isBuffer ? "rgba(2,132,199,0.15)" : cat.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({
+path: env.isBuffer ? ICONS.shield : (ICONS[cat.iconKey] || ICONS.other_exp),
+size: 15, color: env.isBuffer ? "#0284c7" : cat.color,
+}),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0,
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+},
+children: env.name || cat.name,
+}),
+d.jsxs("p", {
+style: { fontSize: 10, color: "#94a3b8", margin: "2px 0 0" },
+children: ["asignado: ", formatAmountES(envAssigned), " ", symbol],
+}),
+],
+}),
+],
+}, env.id);
+}),
+}),
+],
+}),
+d.jsx("div", {
+style: {
+padding: 16, borderTop: "1px solid rgba(0,0,0,0.06)",
+background: "white", flexShrink: 0, boxSizing: "border-box",
+},
+children: d.jsx("button", {
+onClick: handleSave,
+style: {
+width: "100%", padding: 12, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+boxShadow: "0 4px 14px rgba(124,58,237,0.3)",
+boxSizing: "border-box",
+},
+children: "Confirmar movimiento",
+}),
+}),
+],
+}),
+});
+}
 function FinanceMorePage(o) {
 return d.jsxs("div", {
 style: { display: "flex", flexDirection: "column", gap: 16 },
@@ -9203,7 +9683,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v18",
+children: "v19",
 }),
 ],
 }),
@@ -9228,7 +9708,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v18",
+children: "v19",
 });
 }
 
