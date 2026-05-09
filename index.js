@@ -3656,6 +3656,10 @@ const [selectedMonth, setSelectedMonth] = b.useState(function() {
 const now = new Date();
 return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 });
+const [accounts, setAccounts] = b.useState([]);
+const [accountsLoaded, setAccountsLoaded] = b.useState(false);
+const [showAccountsOnboarding, setShowAccountsOnboarding] = b.useState(false);
+const [showTransferModal, setShowTransferModal] = b.useState(false);
 b.useEffect(function () {
 if (!_uid) return;
 let unsub;
@@ -3685,6 +3689,29 @@ setEnvelopes(envs);
 } catch (e) { console.error("env sub err:", e); }
 return function () { if (unsub) try { unsub(); } catch (e) {} };
 }, [_uid]);
+
+b.useEffect(function () {
+if (!_uid) return;
+let unsub;
+try {
+unsub = Al(_uid, "finance_accounts", function (accs) {
+try {
+if (Array.isArray(accs)) {
+setAccounts(accs);
+}
+setAccountsLoaded(true);
+} catch (inner) { console.error("acc sub:", inner); }
+});
+} catch (e) { console.error("acc sub err:", e); setAccountsLoaded(true); }
+return function () { if (unsub) try { unsub(); } catch (e) {} };
+}, [_uid]);
+
+b.useEffect(function () {
+if (!_uid || !accountsLoaded || !hasLoadedFromFirestore) return;
+if (accounts.length === 0) {
+setShowAccountsOnboarding(true);
+}
+}, [_uid, accountsLoaded, hasLoadedFromFirestore, accounts.length]);
 b.useEffect(function () {
 if (!_uid || !Array.isArray(transactions)) return;
 const now = new Date();
@@ -3762,14 +3789,73 @@ setCurrency(c);
 try { localStorage.setItem("mb-finance-currency", c); } catch (e) {}
 setShowOnboarding(false);
 };
+const saveAccount = function(acc) {
+if (!_uid) return;
+try { Cl(_uid, "finance_accounts", acc); } catch(e) { console.error("save acc:", e); alert("Error al guardar cuenta"); }
+};
+
+const deleteAccount = function(accId) {
+if (!_uid) return;
+const remaining = accounts.filter(function(a) { return a.id !== accId; });
+const defaultAcc = remaining.find(function(a) { return a.isDefault; }) || remaining[0];
+if (!defaultAcc) { alert("No puedes eliminar la última cuenta"); return; }
+transactions.forEach(function(tx) {
+if (tx.accountId === accId || tx.fromAccountId === accId || tx.toAccountId === accId) {
+const updated = Object.assign({}, tx);
+if (updated.accountId === accId) updated.accountId = defaultAcc.id;
+if (updated.fromAccountId === accId) updated.fromAccountId = defaultAcc.id;
+if (updated.toAccountId === accId) updated.toAccountId = defaultAcc.id;
+try { Cl(_uid, "finance_transactions", updated); } catch(e) {}
+}
+});
+try { Il(_uid, "finance_accounts", accId); } catch(e) { console.error("del acc:", e); }
+};
+
+const setDefaultAccount = function(accId) {
+if (!_uid) return;
+accounts.forEach(function(a) {
+const wantDefault = (a.id === accId);
+if (a.isDefault !== wantDefault) {
+const updated = Object.assign({}, a, { isDefault: wantDefault });
+try { Cl(_uid, "finance_accounts", updated); } catch(e) {}
+}
+});
+};
+
+const handleAccountsOnboarding = function(result) {
+if (!_uid) return;
+result.accounts.forEach(function(a) {
+try { Cl(_uid, "finance_accounts", a); } catch(e) { console.error("onb acc:", e); }
+});
+const defaultAcc = result.accounts.find(function(a) { return a.isDefault; }) || result.accounts[0];
+if (result.action === "wipe") {
+transactions.forEach(function(tx) {
+try { Il(_uid, "finance_transactions", tx.id); } catch(e) {}
+});
+envelopes.forEach(function(env) {
+try { Il(_uid, "finance_envelopes", env.id); } catch(e) {}
+});
+} else {
+transactions.forEach(function(tx) {
+if (!tx.accountId) {
+const updated = Object.assign({}, tx, { accountId: defaultAcc.id });
+try { Cl(_uid, "finance_transactions", updated); } catch(e) {}
+}
+});
+}
+setShowAccountsOnboarding(false);
+};
+
 const addTransaction = function (tx) {
 if (!_uid) {
 alert("Debes iniciar sesión para guardar movimientos");
 return;
 }
+const defaultAcc = accounts.find(function(a) { return a.isDefault; }) || accounts[0];
 const newTx = Object.assign({
 id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
 createdAt: Date.now(),
+accountId: defaultAcc ? defaultAcc.id : "",
 }, tx);
 try {
 Cl(_uid, "finance_transactions", newTx);
@@ -3800,21 +3886,29 @@ if (path === "/finanzas/movimientos") {
 content = d.jsx(FinanceMovementsPage, {
 transactions: transactions, currency: currency,
 selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth,
+accounts: accounts,
 onDelete: deleteTransaction,
 onAdd: function (type) { setShowAddModal(type); },
+onTransfer: function() { setShowTransferModal(true); },
 isLoading: !hasLoadedFromFirestore,
 });
 } else if (path === "/finanzas/sobres") {
 content = d.jsx(FinanceSobresPage, { transactions: transactions, currency: currency, envelopes: envelopes, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
 } else if (path === "/finanzas/stats") {
 content = d.jsx(FinanceStatsPage, { transactions: transactions, currency: currency, selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth });
+} else if (path === "/finanzas/asistente") {
+content = d.jsx(FinanceAssistantPage, { transactions: transactions, envelopes: envelopes, currency: currency });
+} else if (path === "/finanzas/cuentas") {
+content = d.jsx(FinanceAccountsPage, { accounts: accounts, transactions: transactions, currency: currency, onSaveAccount: saveAccount, onDeleteAccount: deleteAccount, onSetDefault: setDefaultAccount });
 } else if (path === "/finanzas/mas") {
-content = d.jsx(FinanceMorePage, { onChangeCurrency: function () { setShowOnboarding(true); } });
+content = d.jsx(FinanceMorePage, { onChangeCurrency: function () { setShowOnboarding(true); }, navigate: navigate });
 } else {
 content = d.jsx(FinanceDashboard, {
 transactions: transactions, currency: currency,
 selectedMonth: selectedMonth, setSelectedMonth: setSelectedMonth,
+accounts: accounts,
 onAdd: function (type) { setShowAddModal(type); },
+onTransfer: function() { setShowTransferModal(true); },
 onSeeAll: function () { navigate("/finanzas/movimientos"); },
 onDeleteTx: deleteTransaction,
 isLoading: !hasLoadedFromFirestore,
@@ -3843,6 +3937,7 @@ type: showAddModal,
 currency: currency,
 envelopes: envelopes,
 transactions: transactions,
+accounts: accounts,
 onClose: function () { setShowAddModal(null); },
 onSave: addTransaction,
 }) : null,
@@ -3871,6 +3966,15 @@ try { Cl(_uid, "finance_envelopes", updated); } catch(e) { console.error("repart
 });
 setShowDistribute(null);
 }
+}) : null,
+showAccountsOnboarding ? d.jsx(AccountsOnboardingModal, {
+onFinish: handleAccountsOnboarding,
+}) : null,
+showTransferModal ? d.jsx(TransferModal, {
+accounts: accounts,
+currency: currency,
+onClose: function() { setShowTransferModal(false); },
+onSave: function(tx) { addTransaction(tx); setShowTransferModal(false); },
 }) : null,
 showDay1Banner ? d.jsx(Day1Modal, {
 onYes: function() {
@@ -4005,6 +4109,7 @@ const _todayMonth = _now2.getFullYear() + "-" + String(_now2.getMonth() + 1).pad
 const curMonth = o.selectedMonth || _todayMonth;
 const isViewingCurrent = curMonth === _todayMonth;
 o.transactions.forEach(function (tx) {
+if (tx.type === "transfer") return;
 const sign = tx.type === "income" ? 1 : -1;
 if (isViewingCurrent) {
 totalCents += sign * tx.amountCents;
@@ -4015,7 +4120,7 @@ totalCents += sign * tx.amountCents;
 }
 if (tx.date && tx.date.startsWith(curMonth)) {
 if (tx.type === "income") monthIncomeCents += tx.amountCents;
-else monthExpenseCents += tx.amountCents;
+else if (tx.type === "expense") monthExpenseCents += tx.amountCents;
 }
 });
 const monthSavingCents = monthIncomeCents - monthExpenseCents;
@@ -4136,6 +4241,22 @@ d.jsx("p", { style: { fontSize: 13, fontWeight: 700, margin: 0 }, children: "Sac
 }),
 ],
 }),
+(o.accounts && o.accounts.length >= 2 && o.onTransfer) ? d.jsxs("button", {
+onClick: o.onTransfer,
+style: {
+padding: "10px 14px", borderRadius: 12,
+border: "1px solid rgba(2,132,199,0.2)",
+background: "rgba(2,132,199,0.04)",
+color: "#0284c7", cursor: "pointer",
+fontSize: 12, fontWeight: 600,
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+boxSizing: "border-box", width: "100%",
+},
+children: [
+MIcon({ path: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', size: 13, color: "#0284c7" }),
+"Transferir entre cuentas",
+],
+}) : null,
 o.isLoading && o.transactions.length === 0 ? d.jsx("div", {
 style: {
 padding: 28, textAlign: "center",
@@ -4366,6 +4487,8 @@ const [note, setNote] = b.useState("");
 const [date, setDate] = b.useState(function () {
 return new Date().toISOString().slice(0, 10);
 });
+const _defaultAcc = (o.accounts || []).find(function(a) { return a.isDefault; }) || (o.accounts || [])[0];
+const [accountId, setAccountId] = b.useState(_defaultAcc ? _defaultAcc.id : "");
 const symbol = getCurrencySymbol(o.currency);
 const handleSave = function () {
 const cleaned = amount.replace(/\./g, "").replace(",", ".");
@@ -4382,6 +4505,7 @@ currency: o.currency,
 categoryId: categoryId,
 note: note.trim(),
 date: date,
+accountId: accountId,
 };
 if (o.type === "expense" && Array.isArray(o.envelopes)) {
 const env = o.envelopes.find(function (e) { return e.categoryId === categoryId && !e.isBuffer; });
@@ -4622,6 +4746,12 @@ boxSizing: "border-box",
 outline: "none",
 },
 }),
+(o.accounts && o.accounts.length >= 2) ? d.jsx(AccountSelector, {
+accounts: o.accounts,
+value: accountId,
+onChange: setAccountId,
+label: "Cuenta",
+}) : null,
 d.jsx("p", {
 style: {
 fontSize: 11, fontWeight: 700, textTransform: "uppercase",
@@ -7167,6 +7297,1334 @@ children: "Gastos",
 ],
 });
 }
+function FinanceAssistantPage(o) {
+const transactions = o.transactions || [];
+const envelopes = o.envelopes || [];
+const symbol = getCurrencySymbol(o.currency);
+const [messages, setMessages] = b.useState(function() {
+try {
+const raw = localStorage.getItem("mb-finance-chat");
+if (raw) return JSON.parse(raw);
+} catch (e) {}
+return [];
+});
+const [input, setInput] = b.useState("");
+const scrollRef = b.useRef(null);
+b.useEffect(function() {
+try { localStorage.setItem("mb-finance-chat", JSON.stringify(messages)); } catch(e) {}
+if (scrollRef.current) {
+setTimeout(function() {
+scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+}, 50);
+}
+}, [messages]);
+const buildContext = function() {
+const _now = new Date();
+const curMonth = _now.getFullYear() + "-" + String(_now.getMonth() + 1).padStart(2, "0");
+const lastDay = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).getDate();
+const daysLeft = lastDay - _now.getDate();
+let totalSaldo = 0;
+let monthIncome = 0;
+let monthExpense = 0;
+const byCategory = {};
+transactions.forEach(function(tx) {
+const sign = tx.type === "income" ? 1 : -1;
+totalSaldo += sign * tx.amountCents;
+if (tx.date && tx.date.startsWith(curMonth)) {
+if (tx.type === "income") monthIncome += tx.amountCents;
+else if (tx.type === "expense") {
+monthExpense += tx.amountCents;
+if (!byCategory[tx.categoryId]) byCategory[tx.categoryId] = 0;
+byCategory[tx.categoryId] += tx.amountCents;
+}
+}
+});
+const topCats = Object.keys(byCategory)
+.map(function(catId) {
+return { id: catId, cat: getCategoryById(catId), amount: byCategory[catId] };
+})
+.sort(function(a, b) { return b.amount - a.amount; });
+const sobreEstados = envelopes.map(function(env) {
+const cat = getCategoryById(env.categoryId);
+const assigned = (env.monthlyAssignments && env.monthlyAssignments[curMonth] !== undefined)
+? env.monthlyAssignments[curMonth]
+: (env.monthlyAmountCents || 0);
+let spent = 0;
+transactions.forEach(function(tx) {
+if (tx.type !== "expense" || !tx.date || !tx.date.startsWith(curMonth)) return;
+if (env.isBuffer) {
+if (tx.envelopeId === env.id) spent += tx.amountCents;
+if (tx.bufferEnvelopeId === env.id && tx.bufferOverflowCents) spent += tx.bufferOverflowCents;
+} else {
+if (tx.categoryId === env.categoryId && tx.envelopeId === env.id) spent += tx.amountCents;
+}
+});
+return {
+id: env.id,
+name: env.name || cat.name,
+category: cat.name,
+categoryId: env.categoryId,
+color: cat.color,
+isBuffer: !!env.isBuffer,
+assigned: assigned,
+spent: spent,
+remaining: assigned - spent,
+pct: assigned > 0 ? (spent / assigned) * 100 : 0,
+};
+});
+const last3Months = [];
+for (let i = 1; i <= 3; i++) {
+const d = new Date(_now);
+d.setMonth(d.getMonth() - i);
+const m = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+let inc = 0, exp = 0;
+transactions.forEach(function(tx) {
+if (!tx.date || !tx.date.startsWith(m)) return;
+if (tx.type === "income") inc += tx.amountCents;
+else if (tx.type === "expense") exp += tx.amountCents;
+});
+last3Months.push({ month: m, income: inc, expense: exp, saving: inc - exp });
+}
+return {
+now: _now,
+curMonth: curMonth,
+lastDay: lastDay,
+daysLeft: daysLeft,
+totalSaldo: totalSaldo,
+monthIncome: monthIncome,
+monthExpense: monthExpense,
+monthSaving: monthIncome - monthExpense,
+topCats: topCats,
+sobres: sobreEstados,
+buffer: sobreEstados.find(function(s) { return s.isBuffer; }),
+sobresNormales: sobreEstados.filter(function(s) { return !s.isBuffer; }),
+last3Months: last3Months,
+};
+};
+const fmt = function(cents) {
+return formatAmountES(cents) + " " + symbol;
+};
+const analyze = function(question) {
+const q = question.toLowerCase().trim();
+const ctx = buildContext();
+const matchAfford = q.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:€|euros?|eur|usd|\$|gbp|libras?|mad|dirham|dh)?/);
+const wantsAfford = /(?:permitir|comprar|gastar|alcanza|llega|tengo)/i.test(q) && matchAfford;
+if (wantsAfford) {
+const amountEur = parseFloat(matchAfford[1].replace(",", "."));
+const amountCents = Math.round(amountEur * 100);
+const allCats = EXPENSE_CATEGORIES.concat(INCOME_CATEGORIES);
+let mentionedCat = null;
+allCats.forEach(function(cc) {
+if (q.indexOf(cc.name.toLowerCase()) >= 0) mentionedCat = cc;
+});
+const sobre = mentionedCat ? ctx.sobresNormales.find(function(s) { return s.categoryId === mentionedCat.id; }) : null;
+let lines = [];
+lines.push("Vas a gastar **" + fmt(amountCents) + "**.");
+lines.push("");
+if (sobre) {
+lines.push("📦 Tu sobre **" + sobre.name + "** tiene " + fmt(sobre.remaining) + " disponibles este mes.");
+if (sobre.remaining >= amountCents) {
+lines.push("✅ **Sí puedes permitírtelo** sin tocar el amortiguador.");
+lines.push("Te quedarían **" + fmt(sobre.remaining - amountCents) + "** en este sobre para los " + ctx.daysLeft + " días que quedan del mes.");
+} else if (ctx.buffer) {
+const deficit = amountCents - sobre.remaining;
+if (ctx.buffer.remaining >= deficit) {
+lines.push("⚠️ El sobre **se quedaría corto en " + fmt(deficit) + "**, pero tu amortiguador (" + fmt(ctx.buffer.remaining) + ") puede cubrirlo.");
+lines.push("Despues del gasto, te quedaría: " + fmt(0) + " en " + sobre.name + ", " + fmt(ctx.buffer.remaining - deficit) + " en amortiguador.");
+} else {
+lines.push("❌ **No alcanza**. Te faltarían " + fmt(deficit - ctx.buffer.remaining) + " incluso usando el amortiguador.");
+}
+} else {
+lines.push("❌ **No te alcanza** este mes. Te faltarían " + fmt(amountCents - sobre.remaining) + " y no tienes amortiguador para cubrir el déficit.");
+lines.push("Sugerencia: marca uno de tus sobres como amortiguador o reduce el gasto.");
+}
+} else {
+lines.push("📊 Tu situación actual:");
+lines.push("- Saldo: " + fmt(ctx.totalSaldo));
+lines.push("- Quedan " + ctx.daysLeft + " días del mes");
+if (ctx.totalSaldo >= amountCents) {
+const after = ctx.totalSaldo - amountCents;
+const dailyBudget = ctx.daysLeft > 0 ? after / ctx.daysLeft : after;
+lines.push("");
+lines.push("✅ **Tienes saldo de sobra** para gastarlo.");
+lines.push("Después te quedarían " + fmt(after) + " (≈ " + fmt(Math.round(dailyBudget)) + "/día durante el resto del mes).");
+if (dailyBudget < 1000) {
+lines.push("⚠️ Pero ojo: te quedaría poco margen diario.");
+}
+} else {
+lines.push("");
+lines.push("❌ **No tienes saldo suficiente.**");
+}
+if (ctx.sobresNormales.length > 0) {
+lines.push("");
+lines.push("💡 Si dices la categoría (ej: \"¿puedo gastar " + amountEur + "€ en comida?\"), te doy análisis del sobre concreto.");
+}
+}
+return lines.join("\n");
+}
+if (/(?:gasto m[aá]s|gasto demasiado|en qu[eé] gasto|top categor|m[aá]s gasto|donde gasto)/i.test(q)) {
+if (ctx.topCats.length === 0) {
+return "Aún no tienes gastos este mes. Cuando registres algunos, te puedo decir dónde gastas más.";
+}
+let lines = [];
+lines.push("📊 Tus 3 categorías con más gasto este mes:");
+lines.push("");
+ctx.topCats.slice(0, 3).forEach(function(cat, i) {
+const pctOfTotal = (cat.amount / ctx.monthExpense) * 100;
+lines.push((i + 1) + ". **" + cat.cat.name + "**: " + fmt(cat.amount) + " (" + Math.round(pctOfTotal) + "% del total)");
+});
+const last3Total = ctx.last3Months.reduce(function(acc, m) { return acc + m.expense; }, 0);
+const last3Avg = last3Total / 3;
+if (last3Avg > 0) {
+lines.push("");
+const diff = ctx.monthExpense - last3Avg;
+const diffPct = Math.round((diff / last3Avg) * 100);
+if (Math.abs(diffPct) >= 10) {
+if (diff > 0) {
+lines.push("📈 Este mes gastas " + diffPct + "% más que tu media de los 3 meses anteriores.");
+} else {
+lines.push("📉 Este mes gastas " + Math.abs(diffPct) + "% menos que tu media de los 3 meses anteriores. ¡Bien!");
+}
+}
+}
+return lines.join("\n");
+}
+if (/(?:cu[aá]nto.*ahorr|puedo ahorrar|debo ahorrar|deber[ií]a ahorrar|me renta ahorrar)/i.test(q)) {
+if (ctx.monthIncome === 0) {
+return "Aún no tienes ingresos registrados este mes. Registra tu paga primero y te puedo decir cuánto puedes ahorrar.";
+}
+let lines = [];
+lines.push("💎 **Análisis de ahorro:**");
+lines.push("");
+lines.push("- Ingresos del mes: " + fmt(ctx.monthIncome));
+lines.push("- Gastos del mes: " + fmt(ctx.monthExpense));
+lines.push("- Diferencia actual: " + fmt(ctx.monthSaving) + " (" + (ctx.monthIncome > 0 ? Math.round((ctx.monthSaving / ctx.monthIncome) * 100) : 0) + "%)");
+lines.push("");
+const dayOfMonth = ctx.now.getDate();
+const daysElapsed = dayOfMonth;
+const dailyRate = daysElapsed > 0 ? ctx.monthExpense / daysElapsed : 0;
+const projectedExpense = dailyRate * ctx.lastDay;
+const projectedSaving = ctx.monthIncome - projectedExpense;
+lines.push("Al ritmo actual, **acabarías el mes con un ahorro de " + fmt(Math.round(projectedSaving)) + "**.");
+lines.push("");
+const recommendedSaving = Math.round(ctx.monthIncome * 0.2);
+if (projectedSaving >= recommendedSaving) {
+lines.push("✅ Vas bien. Lo recomendable es ahorrar al menos el 20% de los ingresos (≈ " + fmt(recommendedSaving) + ") y vas por encima.");
+} else if (projectedSaving > 0) {
+lines.push("⚠️ Vas a ahorrar algo, pero por debajo del 20% recomendado (" + fmt(recommendedSaving) + ").");
+lines.push("Para llegar al 20% deberías reducir " + fmt(recommendedSaving - Math.round(projectedSaving)) + " de gastos.");
+} else {
+lines.push("❌ Al ritmo actual, **gastarás más de lo que ingresas**. Revisa categorías.");
+}
+return lines.join("\n");
+}
+if (/(?:fin de mes|llegar.*fin|proyecci|c[oó]mo voy|voy bien|sigo bien|estoy bien)/i.test(q)) {
+let lines = [];
+lines.push("📈 **Proyección a fin de mes:**");
+lines.push("");
+lines.push("Día " + ctx.now.getDate() + " de " + ctx.lastDay + " (quedan " + ctx.daysLeft + " días).");
+lines.push("");
+const dayOfMonth = ctx.now.getDate();
+const dailyRate = dayOfMonth > 0 ? ctx.monthExpense / dayOfMonth : 0;
+const projectedExpense = dailyRate * ctx.lastDay;
+lines.push("- Gasto actual: " + fmt(ctx.monthExpense));
+lines.push("- Gasto proyectado fin de mes: ~" + fmt(Math.round(projectedExpense)));
+const sobresRiesgo = ctx.sobresNormales.filter(function(s) {
+const sDailyRate = dayOfMonth > 0 ? s.spent / dayOfMonth : 0;
+const sProjected = sDailyRate * ctx.lastDay;
+return sProjected > s.assigned * 1.05;
+});
+if (sobresRiesgo.length > 0) {
+lines.push("");
+lines.push("⚠️ **Sobres en riesgo de excederse:**");
+sobresRiesgo.forEach(function(s) {
+const sDailyRate = dayOfMonth > 0 ? s.spent / dayOfMonth : 0;
+const sProjected = sDailyRate * ctx.lastDay;
+const exceso = sProjected - s.assigned;
+lines.push("- " + s.name + ": gastarás ~" + fmt(Math.round(sProjected)) + " (excedido en " + fmt(Math.round(exceso)) + ")");
+});
+} else if (ctx.sobresNormales.length > 0) {
+lines.push("");
+lines.push("✅ Todos tus sobres van bien al ritmo actual.");
+}
+return lines.join("\n");
+}
+if (/(?:mes pasado|mes anterior|compara|antes|hace un mes)/i.test(q)) {
+if (ctx.last3Months.length === 0 || ctx.last3Months[0].expense === 0) {
+return "No tengo datos suficientes del mes pasado para comparar.";
+}
+const prev = ctx.last3Months[0];
+let lines = [];
+lines.push("📊 **Mes actual vs mes anterior:**");
+lines.push("");
+lines.push("Gastos:");
+lines.push("- Este mes: " + fmt(ctx.monthExpense));
+lines.push("- Mes anterior: " + fmt(prev.expense));
+const diffExp = ctx.monthExpense - prev.expense;
+const diffExpPct = prev.expense > 0 ? Math.round((diffExp / prev.expense) * 100) : 0;
+if (Math.abs(diffExpPct) >= 5) {
+lines.push("- Diferencia: " + (diffExp > 0 ? "+" : "") + fmt(diffExp) + " (" + (diffExp > 0 ? "+" : "") + diffExpPct + "%)");
+} else {
+lines.push("- Variación mínima.");
+}
+lines.push("");
+lines.push("Ingresos:");
+lines.push("- Este mes: " + fmt(ctx.monthIncome));
+lines.push("- Mes anterior: " + fmt(prev.income));
+lines.push("");
+lines.push("Ahorro:");
+lines.push("- Este mes: " + fmt(ctx.monthSaving));
+lines.push("- Mes anterior: " + fmt(prev.saving));
+return lines.join("\n");
+}
+if (/(?:saldo|cu[aá]nto tengo|cu[aá]nto me queda|disponible|cuanta plata|cu[aá]nto dinero)/i.test(q)) {
+let lines = [];
+lines.push("💰 **Tu situación ahora mismo:**");
+lines.push("");
+lines.push("Saldo total: **" + fmt(ctx.totalSaldo) + "**");
+lines.push("");
+if (ctx.sobresNormales.length > 0) {
+lines.push("Disponible por sobre este mes:");
+ctx.sobresNormales.slice(0, 5).forEach(function(s) {
+const status = s.remaining < 0 ? "❌" : s.pct > 80 ? "⚠️" : "✅";
+lines.push("- " + status + " " + s.name + ": " + fmt(s.remaining) + " de " + fmt(s.assigned));
+});
+if (ctx.buffer) {
+lines.push("");
+lines.push("🛡️ Amortiguador: " + fmt(ctx.buffer.remaining));
+}
+}
+lines.push("");
+lines.push("Quedan " + ctx.daysLeft + " días para fin de mes.");
+return lines.join("\n");
+}
+if (/^(hola|hey|holi|buenas|hi|qu[eé] tal)/i.test(q)) {
+return "¡Hola Rayan! Soy tu asistente financiero. Te puedo ayudar con cosas como:\n\n• ¿Puedo permitirme 80€ en comida?\n• ¿En qué gasto demasiado?\n• ¿Cuánto puedo ahorrar este mes?\n• ¿Cómo voy para fin de mes?\n• ¿Cuánto saldo tengo?\n• Compárame con el mes pasado\n\nPregúntame lo que quieras 👇";
+}
+return "No estoy seguro de cómo responder eso. Pruebá con preguntas como:\n\n• \"¿Puedo permitirme [importe]€?\"\n• \"¿En qué gasto más?\"\n• \"¿Cuánto puedo ahorrar?\"\n• \"¿Cómo voy para fin de mes?\"\n• \"¿Cuánto saldo tengo?\"\n• \"Compárame con el mes pasado\"\n\nAún no tengo IA real, sólo reglas lógicas. En el futuro habrá modo IA con API key.";
+};
+const sendMessage = function() {
+const q = input.trim();
+if (!q) return;
+const userMsg = { role: "user", text: q, ts: Date.now() };
+const reply = analyze(q);
+const botMsg = { role: "assistant", text: reply, ts: Date.now() + 1 };
+setMessages(messages.concat([userMsg, botMsg]));
+setInput("");
+};
+const clearChat = function() {
+if (!confirm("¿Borrar el historial de chat?")) return;
+setMessages([]);
+};
+const suggestions = [
+"¿Puedo permitirme 80€ en comida?",
+"¿En qué gasto más este mes?",
+"¿Cuánto puedo ahorrar?",
+"¿Cómo voy para fin de mes?",
+"¿Cuánto saldo tengo?",
+];
+return d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 12, minHeight: "calc(100vh - 200px)" },
+children: [
+d.jsxs(Y.div, {
+initial: { opacity: 0, y: -8 },
+animate: { opacity: 1, y: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between" },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 8 },
+children: [
+d.jsx("div", {
+style: {
+width: 36, height: 36, borderRadius: 12,
+background: "linear-gradient(135deg, rgba(124,58,237,0.15), rgba(168,85,247,0.08))",
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: MIcon({ path: ICONS.sparkles, size: 19, color: "#7c3aed" }),
+}),
+d.jsx("h1", {
+style: {
+fontSize: 24, fontWeight: 700, color: "#0f172a", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: "Asistente",
+}),
+],
+}),
+messages.length > 0 ? d.jsx("button", {
+onClick: clearChat,
+style: {
+fontSize: 11, fontWeight: 600, color: "#94a3b8",
+background: "rgba(0,0,0,0.04)", border: "none",
+borderRadius: 8, padding: "5px 9px", cursor: "pointer",
+},
+children: "Limpiar",
+}) : null,
+],
+}),
+d.jsx("p", {
+style: { fontSize: 12, color: "#64748b", margin: "6px 0 0" },
+children: "Modo gratis · Análisis basado en tus datos locales",
+}),
+],
+}),
+d.jsx("div", {
+ref: scrollRef,
+style: {
+flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 10,
+paddingRight: 4,
+},
+children: messages.length === 0 ? d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 14, paddingTop: 8 },
+children: [
+d.jsxs("div", {
+className: "glass-card",
+style: {
+padding: 16, boxSizing: "border-box",
+background: "linear-gradient(135deg, rgba(124,58,237,0.05), rgba(168,85,247,0.02))",
+borderLeft: "3px solid #7c3aed",
+},
+children: [
+d.jsx("p", {
+style: { fontSize: 13, color: "#0f172a", margin: 0, lineHeight: 1.6 },
+children: "¡Hola Rayan! Soy tu asistente financiero. Pregúntame sobre tu dinero y te respondo con análisis de tus datos reales.",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#94a3b8", margin: "8px 0 0" },
+children: "Por ahora uso reglas lógicas locales (sin IA real, sin internet, privado).",
+}),
+],
+}),
+d.jsxs("div", {
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#94a3b8", marginBottom: 8,
+},
+children: "Sugerencias",
+}),
+d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 6 },
+children: suggestions.map(function(s, i) {
+return d.jsx("button", {
+key: i,
+onClick: function() {
+const userMsg = { role: "user", text: s, ts: Date.now() };
+const reply = analyze(s);
+const botMsg = { role: "assistant", text: reply, ts: Date.now() + 1 };
+setMessages(messages.concat([userMsg, botMsg]));
+},
+style: {
+textAlign: "left",
+padding: "10px 12px", borderRadius: 10,
+border: "1px solid rgba(124,58,237,0.15)",
+background: "rgba(124,58,237,0.03)",
+color: "#475569",
+fontSize: 12, fontWeight: 500,
+cursor: "pointer",
+boxSizing: "border-box",
+},
+children: s,
+});
+}),
+}),
+],
+}),
+],
+}) : d.jsx(d.Fragment, {
+children: messages.map(function(m, i) {
+const isUser = m.role === "user";
+return d.jsx("div", {
+key: i,
+style: {
+display: "flex",
+justifyContent: isUser ? "flex-end" : "flex-start",
+},
+children: d.jsxs("div", {
+style: {
+maxWidth: "85%",
+padding: "10px 13px",
+borderRadius: 14,
+background: isUser ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "rgba(255,255,255,0.85)",
+color: isUser ? "white" : "#0f172a",
+border: isUser ? "none" : "1px solid rgba(0,0,0,0.05)",
+fontSize: 13, lineHeight: 1.5,
+whiteSpace: "pre-wrap",
+wordBreak: "break-word",
+boxSizing: "border-box",
+},
+children: [
+!isUser ? d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 4, marginBottom: 4 },
+children: [
+MIcon({ path: ICONS.sparkles, size: 11, color: "#7c3aed" }),
+d.jsx("span", {
+style: { fontSize: 9, fontWeight: 700, color: "#7c3aed", letterSpacing: 0.4, textTransform: "uppercase" },
+children: "Asistente",
+}),
+],
+}) : null,
+d.jsx("span", {
+dangerouslySetInnerHTML: {
+__html: m.text
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+.replace(/\n/g, "<br/>"),
+},
+}),
+],
+}),
+});
+}),
+}),
+}),
+d.jsxs("div", {
+style: {
+display: "flex", gap: 8, alignItems: "flex-end",
+paddingTop: 8,
+borderTop: messages.length > 0 ? "1px solid rgba(0,0,0,0.06)" : "none",
+boxSizing: "border-box",
+},
+children: [
+d.jsx("textarea", {
+value: input,
+onChange: function(e) { setInput(e.target.value); },
+onKeyDown: function(e) {
+if (e.key === "Enter" && !e.shiftKey) {
+e.preventDefault();
+sendMessage();
+}
+},
+placeholder: "Pregúntame algo...",
+rows: 1,
+style: {
+flex: 1, padding: "10px 12px", borderRadius: 12,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white",
+fontSize: 13,
+outline: "none",
+resize: "none",
+minHeight: 40,
+maxHeight: 100,
+boxSizing: "border-box",
+fontFamily: "inherit",
+},
+}),
+d.jsx("button", {
+onClick: sendMessage,
+disabled: !input.trim(),
+style: {
+padding: "10px 14px", borderRadius: 12, border: "none",
+background: input.trim() ? "linear-gradient(135deg, #7c3aed, #6d28d9)" : "rgba(0,0,0,0.08)",
+color: input.trim() ? "white" : "#94a3b8",
+fontSize: 13, fontWeight: 700,
+cursor: input.trim() ? "pointer" : "default",
+boxShadow: input.trim() ? "0 4px 14px rgba(124,58,237,0.3)" : "none",
+flexShrink: 0,
+boxSizing: "border-box",
+display: "flex", alignItems: "center", justifyContent: "center",
+minWidth: 60,
+minHeight: 40,
+},
+children: MIcon({ path: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>', size: 16, color: input.trim() ? "white" : "#94a3b8" }),
+}),
+],
+}),
+],
+});
+}
+function AccountsOnboardingModal(o) {
+const [step, setStep] = b.useState("intro");
+const [mode, setMode] = b.useState(null);
+const [accounts, setAccounts] = b.useState([
+{ id: "acc_banco", name: "Banco", iconKey: "package", color: "#2563eb", isDefault: true },
+{ id: "acc_efect", name: "Efectivo", iconKey: "other_inc", color: "#10b981", isDefault: false },
+{ id: "acc_ahorr", name: "Ahorros", iconKey: "shield", color: "#7c3aed", isDefault: false },
+]);
+const [decisionData, setDecisionData] = b.useState(null);
+const goConfigure = function(selectedMode) {
+setMode(selectedMode);
+if (selectedMode === "simple") {
+setAccounts([{ id: "acc_main", name: "Mi dinero", iconKey: "package", color: "#2563eb", isDefault: true }]);
+}
+setStep("decide");
+};
+const finalize = function(action) {
+o.onFinish({ mode: mode, accounts: accounts, action: action });
+};
+return d.jsx("div", {
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.85)",
+backdropFilter: "blur(10px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 250, padding: 16,
+},
+children: d.jsxs(Y.div, {
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: {
+background: "white", borderRadius: 22,
+maxWidth: 420, width: "100%",
+maxHeight: "90vh",
+display: "flex", flexDirection: "column",
+boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+boxSizing: "border-box",
+},
+children: [
+d.jsxs("div", {
+style: { padding: "22px 22px 12px", flexShrink: 0 },
+children: [
+d.jsx("div", {
+style: {
+width: 56, height: 56, borderRadius: 16,
+background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(59,130,246,0.05))",
+margin: "0 auto 12px",
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: MIcon({ path: ICONS.package, size: 28, color: "#2563eb" }),
+}),
+d.jsx("h2", {
+style: {
+fontSize: 20, fontWeight: 700, color: "#0f172a",
+textAlign: "center", margin: "0 0 6px",
+fontFamily: "'Instrument Serif', serif",
+},
+children: step === "intro" ? "Cuentas múltiples"
+: step === "decide" ? "Tus cuentas"
+: "¿Y los datos antiguos?",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", textAlign: "center", margin: 0, lineHeight: 1.5 },
+children: step === "intro" ? "Mebistium ahora soporta separar tu dinero en cuentas. Elige cómo prefieres organizarlo."
+: step === "decide" ? (mode === "simple" ? "Tendrás una sola cuenta global." : "Estas cuentas se crearán. Puedes editarlas luego.")
+: "Tus movimientos actuales no tienen cuenta asignada. ¿Qué prefieres hacer?",
+}),
+],
+}),
+d.jsx("div", {
+style: { flex: 1, overflow: "auto", padding: "8px 22px 16px" },
+children: step === "intro" ? d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 10 },
+children: [
+d.jsxs("button", {
+onClick: function() { goConfigure("simple"); },
+style: {
+padding: 16, borderRadius: 14, border: "2px solid rgba(37,99,235,0.15)",
+background: "white", textAlign: "left", cursor: "pointer",
+display: "flex", alignItems: "center", gap: 12, boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 40, height: 40, borderRadius: 12,
+background: "rgba(37,99,235,0.1)",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: ICONS.package, size: 18, color: "#2563eb" }),
+}),
+d.jsxs("div", {
+children: [
+d.jsx("p", {
+style: { fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0 },
+children: "Modo simple",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: "4px 0 0", lineHeight: 1.4 },
+children: "Una sola cuenta. Suma todo tu dinero (banco + efectivo + ahorros) sin distinguir.",
+}),
+],
+}),
+],
+}),
+d.jsxs("button", {
+onClick: function() { goConfigure("multiple"); },
+style: {
+padding: 16, borderRadius: 14, border: "2px solid rgba(124,58,237,0.15)",
+background: "white", textAlign: "left", cursor: "pointer",
+display: "flex", alignItems: "center", gap: 12, boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 40, height: 40, borderRadius: 12,
+background: "rgba(124,58,237,0.1)",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: ICONS.list, size: 18, color: "#7c3aed" }),
+}),
+d.jsxs("div", {
+children: [
+d.jsx("p", {
+style: { fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0 },
+children: "Cuentas múltiples",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: "4px 0 0", lineHeight: 1.4 },
+children: "Separas Banco, Efectivo, Ahorros... Cada movimiento se asigna a una cuenta.",
+}),
+],
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 10, color: "#94a3b8", textAlign: "center", margin: "8px 0 0", lineHeight: 1.5 },
+children: "Podrás cambiarlo después en Más → Cuentas.",
+}),
+],
+}) : step === "decide" ? d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 8 },
+children: [
+accounts.map(function(acc) {
+return d.jsxs("div", {
+key: acc.id,
+style: {
+padding: "10px 12px", borderRadius: 10,
+background: "rgba(0,0,0,0.03)",
+display: "flex", alignItems: "center", gap: 10,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 32, height: 32, borderRadius: 10,
+background: acc.color + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: ICONS[acc.iconKey] || ICONS.package, size: 15, color: acc.color }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 600, color: "#0f172a", margin: 0 },
+children: acc.name,
+}),
+acc.isDefault ? d.jsx("p", {
+style: { fontSize: 9, fontWeight: 700, color: "#059669", margin: "2px 0 0", letterSpacing: 0.4 },
+children: "PRINCIPAL",
+}) : null,
+],
+}),
+],
+}, acc.id);
+}),
+d.jsx("button", {
+onClick: function() { setStep("legacy"); },
+style: {
+marginTop: 12, padding: 12, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+boxShadow: "0 4px 14px rgba(37,99,235,0.3)",
+boxSizing: "border-box",
+},
+children: "Continuar",
+}),
+d.jsx("button", {
+onClick: function() { setStep("intro"); },
+style: {
+padding: 8, borderRadius: 10, border: "none",
+background: "transparent",
+color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer",
+boxSizing: "border-box",
+},
+children: "Volver",
+}),
+],
+}) : d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 10 },
+children: [
+d.jsxs("button", {
+onClick: function() { finalize("keep"); },
+style: {
+padding: 14, borderRadius: 12, border: "2px solid rgba(5,150,105,0.2)",
+background: "rgba(5,150,105,0.04)",
+textAlign: "left", cursor: "pointer",
+boxSizing: "border-box",
+},
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 700, color: "#059669", margin: 0 },
+children: "Mantener y asignar a la principal",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: "4px 0 0", lineHeight: 1.4 },
+children: "Tus movimientos y sobres antiguos se conservan. Todos van a la cuenta principal. Puedes reasignarlos uno a uno después.",
+}),
+],
+}),
+d.jsxs("button", {
+onClick: function() {
+if (confirm("¿Seguro? Se eliminarán TODOS los movimientos y sobres de Finanzas. Esto NO afecta a Clases.")) {
+finalize("wipe");
+}
+},
+style: {
+padding: 14, borderRadius: 12, border: "2px solid rgba(220,38,38,0.2)",
+background: "rgba(220,38,38,0.04)",
+textAlign: "left", cursor: "pointer",
+boxSizing: "border-box",
+},
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 700, color: "#dc2626", margin: 0 },
+children: "Borrar todo y empezar de cero",
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#64748b", margin: "4px 0 0", lineHeight: 1.4 },
+children: "Solo si todo lo que tienes son pruebas. Tus datos de Clases NO se tocan.",
+}),
+],
+}),
+d.jsx("button", {
+onClick: function() { setStep("decide"); },
+style: {
+padding: 8, borderRadius: 10, border: "none",
+background: "transparent",
+color: "#94a3b8", fontSize: 12, fontWeight: 600, cursor: "pointer",
+boxSizing: "border-box",
+marginTop: 4,
+},
+children: "Volver",
+}),
+],
+}),
+}),
+],
+}),
+});
+}
+function AccountSelector(o) {
+const accounts = o.accounts || [];
+if (accounts.length <= 1) return null;
+return d.jsxs("div", {
+style: { marginBottom: 12 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6,
+},
+children: o.label || "Cuenta",
+}),
+d.jsx("div", {
+style: { display: "flex", gap: 6, flexWrap: "wrap" },
+children: accounts.map(function(acc) {
+const isSelected = acc.id === o.value;
+return d.jsxs("button", {
+key: acc.id,
+onClick: function() { o.onChange(acc.id); },
+style: {
+padding: "6px 10px", borderRadius: 8,
+border: isSelected ? ("2px solid " + (acc.color || "#2563eb")) : "1px solid rgba(0,0,0,0.1)",
+background: isSelected ? (acc.color || "#2563eb") + "14" : "white",
+color: isSelected ? (acc.color || "#2563eb") : "#475569",
+fontSize: 12, fontWeight: 600, cursor: "pointer",
+display: "flex", alignItems: "center", gap: 4,
+boxSizing: "border-box",
+},
+children: [
+MIcon({
+path: ICONS[acc.iconKey] || ICONS.package,
+size: 11,
+color: isSelected ? (acc.color || "#2563eb") : "#94a3b8",
+}),
+acc.name,
+],
+}, acc.id);
+}),
+}),
+],
+});
+}
+function FinanceAccountsPage(o) {
+const accounts = o.accounts || [];
+const transactions = o.transactions || [];
+const symbol = getCurrencySymbol(o.currency);
+const [editingAcc, setEditingAcc] = b.useState(null);
+const [showCreate, setShowCreate] = b.useState(false);
+const calcBalance = function(accId) {
+let total = 0;
+transactions.forEach(function(tx) {
+if (tx.accountId !== accId) return;
+if (tx.type === "income") total += tx.amountCents;
+else if (tx.type === "expense") total -= tx.amountCents;
+else if (tx.type === "transfer") {
+if (tx.fromAccountId === accId) total -= tx.amountCents;
+if (tx.toAccountId === accId) total += tx.amountCents;
+}
+});
+transactions.forEach(function(tx) {
+if (tx.type !== "transfer") return;
+if (tx.fromAccountId === accId && tx.accountId !== accId) total -= tx.amountCents;
+if (tx.toAccountId === accId && tx.accountId !== accId) total += tx.amountCents;
+});
+return total;
+};
+return d.jsxs("div", {
+style: { display: "flex", flexDirection: "column", gap: 14 },
+children: [
+d.jsxs(Y.div, {
+initial: { opacity: 0, y: -8 },
+animate: { opacity: 1, y: 0 },
+children: [
+d.jsx("h1", {
+style: {
+fontSize: 26, fontWeight: 700, color: "#0f172a", margin: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: "Cuentas",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", margin: "4px 0 0" },
+children: accounts.length === 1 ? "Modo simple — una cuenta global"
+: accounts.length + " cuentas configuradas",
+}),
+],
+}),
+d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 8 },
+children: accounts.map(function(acc) {
+const balance = calcBalance(acc.id);
+return d.jsxs("button", {
+key: acc.id,
+onClick: function() { setEditingAcc(acc); },
+className: "glass-card",
+style: {
+padding: 14, boxSizing: "border-box",
+borderLeft: "3px solid " + (acc.color || "#2563eb"),
+display: "flex", alignItems: "center", gap: 12,
+border: "none", cursor: "pointer", textAlign: "left",
+width: "100%",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 40, height: 40, borderRadius: 12,
+background: (acc.color || "#2563eb") + "1a",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({
+path: ICONS[acc.iconKey] || ICONS.package,
+size: 19, color: acc.color || "#2563eb",
+}),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", gap: 6 },
+children: [
+d.jsx("p", {
+style: { fontSize: 14, fontWeight: 700, color: "#0f172a", margin: 0 },
+children: acc.name,
+}),
+acc.isDefault ? d.jsx("span", {
+style: {
+fontSize: 8, fontWeight: 700, color: "#059669",
+background: "rgba(5,150,105,0.1)",
+padding: "1px 5px", borderRadius: 4, letterSpacing: 0.4,
+},
+children: "PRINCIPAL",
+}) : null,
+],
+}),
+d.jsx("p", {
+style: { fontSize: 11, color: "#94a3b8", margin: "2px 0 0" },
+children: "Tap para editar",
+}),
+],
+}),
+d.jsxs("p", {
+style: {
+fontSize: 16, fontWeight: 700,
+color: balance < 0 ? "#dc2626" : "#0f172a",
+margin: 0, flexShrink: 0,
+fontFamily: "'Instrument Serif', serif",
+},
+children: [formatAmountES(balance), " ", symbol],
+}),
+],
+}, acc.id);
+}),
+}),
+d.jsxs("button", {
+onClick: function() { setShowCreate(true); },
+style: {
+padding: "12px 14px", borderRadius: 12, border: "2px dashed #2563eb",
+background: "rgba(37,99,235,0.06)",
+color: "#2563eb", cursor: "pointer", fontSize: 13, fontWeight: 700,
+display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+boxSizing: "border-box",
+},
+children: [
+MIcon({ path: ICONS.plus, size: 16, color: "#2563eb" }),
+"Crear cuenta",
+],
+}),
+(editingAcc || showCreate) ? d.jsx(AccountModal, {
+account: editingAcc,
+accounts: accounts,
+onClose: function() { setEditingAcc(null); setShowCreate(false); },
+onSave: function(acc) {
+o.onSaveAccount(acc);
+setEditingAcc(null); setShowCreate(false);
+},
+onDelete: function() {
+if (editingAcc) o.onDeleteAccount(editingAcc.id);
+setEditingAcc(null);
+},
+onSetDefault: function() {
+if (editingAcc) o.onSetDefault(editingAcc.id);
+setEditingAcc(null);
+},
+}) : null,
+],
+});
+}
+function AccountModal(o) {
+const isEdit = !!o.account;
+const acc = o.account || { name: "", iconKey: "package", color: "#2563eb" };
+const [name, setName] = b.useState(acc.name || "");
+const [iconKey, setIconKey] = b.useState(acc.iconKey || "package");
+const [color, setColor] = b.useState(acc.color || "#2563eb");
+const colorOptions = ["#2563eb", "#10b981", "#7c3aed", "#dc2626", "#f59e0b", "#0284c7", "#ec4899"];
+const iconOptions = ["package", "other_inc", "shield", "trending_up", "list", "subs", "gifts"];
+const handleSave = function() {
+if (!name.trim()) { alert("Pon un nombre"); return; }
+o.onSave({
+id: acc.id || ("acc_" + Date.now().toString(36) + Math.random().toString(36).slice(2,5)),
+name: name.trim(),
+iconKey: iconKey,
+color: color,
+isDefault: !!acc.isDefault,
+});
+};
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 200, padding: 16,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: {
+background: "white", borderRadius: 20, padding: 22,
+maxWidth: 380, width: "100%", boxSizing: "border-box",
+boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+maxHeight: "90vh", overflow: "auto",
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+children: [
+d.jsx("h2", {
+style: { fontSize: 16, fontWeight: 700, color: color, margin: 0 },
+children: isEdit ? "Editar cuenta" : "Nueva cuenta",
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 28, height: 28, borderRadius: 8, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center",
+padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 13, color: "#64748b" }),
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Nombre",
+}),
+d.jsx("input", {
+type: "text", value: name,
+onChange: function(e) { setName(e.target.value); },
+placeholder: "Ej: Banco, Efectivo...",
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13,
+marginBottom: 14, boxSizing: "border-box", outline: "none",
+},
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Icono",
+}),
+d.jsx("div", {
+style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 },
+children: iconOptions.map(function(k) {
+return d.jsx("button", {
+key: k,
+onClick: function() { setIconKey(k); },
+style: {
+width: 36, height: 36, borderRadius: 10,
+border: iconKey === k ? "2px solid " + color : "1px solid rgba(0,0,0,0.1)",
+background: iconKey === k ? color + "1a" : "white",
+cursor: "pointer", padding: 0,
+display: "flex", alignItems: "center", justifyContent: "center",
+},
+children: MIcon({ path: ICONS[k], size: 16, color: iconKey === k ? color : "#94a3b8" }),
+}, k);
+}),
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Color",
+}),
+d.jsx("div", {
+style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 },
+children: colorOptions.map(function(c) {
+return d.jsx("button", {
+key: c,
+onClick: function() { setColor(c); },
+style: {
+width: 30, height: 30, borderRadius: "50%",
+background: c, cursor: "pointer", padding: 0,
+border: color === c ? "3px solid white" : "1px solid rgba(0,0,0,0.1)",
+boxShadow: color === c ? "0 0 0 2px " + c : "none",
+},
+}, c);
+}),
+}),
+isEdit && !acc.isDefault ? d.jsx("button", {
+onClick: o.onSetDefault,
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(5,150,105,0.3)",
+background: "rgba(5,150,105,0.05)", color: "#059669",
+fontSize: 12, fontWeight: 600, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box",
+},
+children: "Marcar como cuenta principal",
+}) : null,
+isEdit && o.onDelete && !acc.isDefault ? d.jsx("button", {
+onClick: function() {
+if (confirm("¿Eliminar esta cuenta? Las transacciones de esta cuenta se reasignarán a la principal.")) {
+o.onDelete();
+}
+},
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(220,38,38,0.2)",
+background: "transparent", color: "#dc2626",
+fontSize: 12, fontWeight: 600, cursor: "pointer",
+marginBottom: 8, boxSizing: "border-box",
+},
+children: "Eliminar cuenta",
+}) : null,
+d.jsx("button", {
+onClick: handleSave,
+style: {
+width: "100%", padding: 12, borderRadius: 10, border: "none",
+background: "linear-gradient(135deg, " + color + ", " + color + "cc)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+boxShadow: "0 4px 14px " + color + "44",
+boxSizing: "border-box",
+},
+children: isEdit ? "Guardar" : "Crear cuenta",
+}),
+],
+}),
+});
+}
+function TransferModal(o) {
+const accounts = (o.accounts || []).filter(function(a) { return !a.isVirtual; });
+if (accounts.length < 2) {
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "center", justifyContent: "center",
+zIndex: 110, padding: 16,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { scale: 0.92, opacity: 0 },
+animate: { scale: 1, opacity: 1 },
+style: {
+background: "white", borderRadius: 20, padding: 22,
+maxWidth: 360, width: "100%", boxSizing: "border-box",
+boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
+},
+children: [
+d.jsx("h2", {
+style: { fontSize: 16, fontWeight: 700, color: "#0f172a", margin: "0 0 8px" },
+children: "Transferir entre cuentas",
+}),
+d.jsx("p", {
+style: { fontSize: 13, color: "#64748b", margin: "0 0 16px", lineHeight: 1.5 },
+children: "Necesitas tener al menos 2 cuentas para transferir. Crea otra cuenta primero en Más → Cuentas.",
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: "100%", padding: 12, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", color: "#475569",
+fontSize: 13, fontWeight: 600, cursor: "pointer",
+boxSizing: "border-box",
+},
+children: "Entendido",
+}),
+],
+}),
+});
+}
+const [fromId, setFromId] = b.useState(accounts[0].id);
+const [toId, setToId] = b.useState(accounts[1].id);
+const [amount, setAmount] = b.useState("");
+const [note, setNote] = b.useState("");
+const symbol = getCurrencySymbol(o.currency);
+const handleSave = function() {
+if (fromId === toId) { alert("Las cuentas origen y destino deben ser distintas"); return; }
+const cleaned = amount.replace(/\./g, "").replace(",", ".");
+const num = parseFloat(cleaned);
+if (!num || num <= 0) { alert("Importe inválido"); return; }
+const cents = Math.round(num * 100);
+o.onSave({
+type: "transfer",
+amountCents: cents,
+currency: o.currency,
+fromAccountId: fromId,
+toAccountId: toId,
+accountId: fromId,
+categoryId: "transfer",
+note: note.trim() || "Transferencia",
+date: new Date().toISOString().split("T")[0],
+});
+};
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "flex-end", justifyContent: "center",
+zIndex: 110,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { y: "100%" },
+animate: { y: 0 },
+style: {
+background: "white",
+borderTopLeftRadius: 24, borderTopRightRadius: 24,
+maxWidth: 520, width: "100%",
+padding: 20, boxSizing: "border-box",
+boxShadow: "0 -24px 60px rgba(0,0,0,0.2)",
+},
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+children: [
+d.jsxs("h2", {
+style: { fontSize: 17, fontWeight: 700, color: "#0284c7", margin: 0,
+display: "flex", alignItems: "center", gap: 8 },
+children: [
+MIcon({ path: '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>', size: 18, color: "#0284c7" }),
+"Transferencia",
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 30, height: 30, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 14, color: "#64748b" }),
+}),
+],
+}),
+d.jsx(AccountSelector, {
+accounts: accounts, value: fromId,
+onChange: setFromId,
+label: "Desde",
+}),
+d.jsx(AccountSelector, {
+accounts: accounts, value: toId,
+onChange: setToId,
+label: "Hacia",
+}),
+d.jsx("p", {
+style: { fontSize: 11, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.5, color: "#64748b", marginBottom: 6 },
+children: "Importe",
+}),
+d.jsxs("div", {
+style: {
+padding: "12px", borderRadius: 12, marginBottom: 14,
+background: "rgba(2,132,199,0.06)",
+display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+boxSizing: "border-box",
+},
+children: [
+d.jsx("input", {
+type: "text", inputMode: "decimal", placeholder: "0",
+value: amount,
+onChange: function(e) {
+const v = e.target.value.replace(/[^0-9,.]/g, "");
+setAmount(v);
+},
+style: {
+fontSize: 24, fontWeight: 700, border: "none", background: "transparent",
+outline: "none", textAlign: "right", color: "#0284c7",
+fontFamily: "'Instrument Serif', serif", width: "60%",
+},
+}),
+d.jsx("span", {
+style: { fontSize: 20, fontWeight: 600, color: "#0284c7" },
+children: symbol,
+}),
+],
+}),
+d.jsx("input", {
+type: "text", value: note,
+onChange: function(e) { setNote(e.target.value); },
+placeholder: "Nota (opcional)",
+style: {
+width: "100%", padding: 10, borderRadius: 8,
+border: "1px solid rgba(0,0,0,0.1)",
+background: "white", fontSize: 13,
+marginBottom: 14, boxSizing: "border-box", outline: "none",
+},
+}),
+d.jsx("button", {
+onClick: handleSave,
+style: {
+width: "100%", padding: 12, borderRadius: 12, border: "none",
+background: "linear-gradient(135deg, #0284c7, #0369a1)",
+color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer",
+boxShadow: "0 4px 14px rgba(2,132,199,0.3)",
+boxSizing: "border-box",
+},
+children: "Confirmar transferencia",
+}),
+],
+}),
+});
+}
 function FinanceMorePage(o) {
 return d.jsxs("div", {
 style: { display: "flex", flexDirection: "column", gap: 16 },
@@ -7208,9 +8666,9 @@ title: "Metas de ahorro", subtitle: "Próximamente",
 disabled: true,
 }),
 MoreItem({
-iconKey: "list", color: "#94a3b8",
-title: "Cuentas múltiples", subtitle: "Próximamente",
-disabled: true,
+iconKey: "list", color: "#2563eb",
+title: "Cuentas", subtitle: "Banco, efectivo, ahorros...",
+onClick: function() { o.navigate("/finanzas/cuentas"); },
 }),
 MoreItem({
 iconKey: "trending_up", color: "#94a3b8",
@@ -7218,9 +8676,10 @@ title: "Suscripciones", subtitle: "Próximamente",
 disabled: true,
 }),
 MoreItem({
-iconKey: "sparkles", color: "#94a3b8",
-title: "Asistente local", subtitle: "Próximamente · te aconsejará sobre tus decisiones",
-disabled: true, last: true,
+iconKey: "sparkles", color: "#7c3aed",
+title: "Asistente", subtitle: "Pregúntale sobre tu dinero",
+onClick: function() { o.navigate("/finanzas/asistente"); },
+last: true,
 }),
 ],
 }),
@@ -7744,7 +9203,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v16",
+children: "v18",
 }),
 ],
 }),
@@ -7769,7 +9228,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v16",
+children: "v18",
 });
 }
 
@@ -9693,4 +11152,4 @@ children: pg.strokes.length,
     .border-primary { border-color: ${t.primary} !important; }
     .progress-fill { background: linear-gradient(135deg, ${t.primary}, ${t.secondary}) !important; }
     .gradient-text { background-image: linear-gradient(135deg, ${t.primary}, ${t.secondary}) !important; }
-  `,document.head.appendChild(e),localStorage.setItem("rayan-theme",t.name)}function vH(t){const e=Zk.find(n=>n.name===t);e&&eN(e)}const xH={hidden:{opacity:0},show:{opacity:1,transition:{staggerChildren:.06}}},FE={hidden:{opacity:0,y:16},show:{opacity:1,y:0,transition:{duration:.5,ease:[.22,1,.36,1]}}};function wH(){const[t,e]=b.useState(localStorage.getItem("rayan-theme")||"Por Defecto"),n=r=>{e(r.name),eN(r)};return d.jsxs(Y.div,{variants:xH,initial:"hidden",animate:"show",className:"space-y-6",children:[d.jsxs(Y.div,{variants:FE,children:[d.jsx("h1",{className:"page-header",children:"Temas"}),d.jsx("p",{className:"page-subtitle",children:"Personaliza los colores de tu app"})]}),d.jsxs(Y.div,{variants:FE,children:[d.jsx("p",{className:"section-label mb-3",children:"🎨 Temas Predefinidos"}),d.jsx("div",{className:"grid grid-cols-2 gap-2.5",children:Zk.map(r=>d.jsxs("button",{onClick:()=>n(r),className:`glass-card p-4 text-left relative transition-all ${t===r.name?"ring-2 ring-offset-1":""}`,children:[t===r.name&&d.jsx("div",{className:"absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center",style:{background:r.primary},children:d.jsx(H5,{className:"w-3 h-3 text-white"})}),d.jsxs("div",{className:"flex gap-1.5 mb-2",children:[d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.primary}}),d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.secondary}}),d.jsx("div",{className:"w-5 h-5 rounded-full border border-black/10",style:{background:`hsl(${r.bg})`}})]}),d.jsx("p",{className:"text-sm font-medium text-foreground",children:r.name}),t===r.name&&d.jsx("p",{className:"text-[10px] text-muted-foreground mt-0.5",children:"✓ Activo"})]},r.name))})]})]})}const _H=()=>{const t=ru();return b.useEffect(()=>{console.error("404 Error: User attempted to access non-existent route:",t.pathname)},[t.pathname]),d.jsx("div",{className:"flex min-h-screen items-center justify-center bg-muted",children:d.jsxs("div",{className:"text-center",children:[d.jsx("h1",{className:"mb-4 text-4xl font-bold",children:"404"}),d.jsx("p",{className:"mb-4 text-xl text-muted-foreground",children:"Oops! Page not found"}),d.jsx("a",{href:"/",className:"text-primary underline hover:text-primary/90",children:"Return to Home"})]})})},bH=new fD;function EH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):t?d.jsx(IW,{}):d.jsx(PC,{to:"/",replace:!0})}function TH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):d.jsxs(oM,{children:[d.jsx(xt,{path:"/",element:t?d.jsx(MebistiumRadialMenu,{}):d.jsx(AW,{})}),d.jsxs(xt,{element:d.jsx(EH,{}),children:[d.jsx(xt,{path:"/dashboard",element:d.jsx(NW,{})}),d.jsx(xt,{path:"/tasks",element:d.jsx(DW,{})}),d.jsx(xt,{path:"/schedule",element:d.jsx(OW,{})}),d.jsx(xt,{path:"/calendar",element:d.jsx(UW,{})}),d.jsx(xt,{path:"/grades",element:d.jsx($W,{})}),d.jsx(xt,{path:"/courses",element:d.jsx(BW,{})}),d.jsx(xt,{path:"/organizer",element:d.jsx(WW,{})}),d.jsx(xt,{path:"/settings",element:d.jsx(GW,{})}),d.jsx(xt,{path:"/classroom",element:d.jsx(lH,{})}),d.jsx(xt,{path:"/notes",element:d.jsx(XW,{})}),d.jsx(xt,{path:"/selectividad",element:d.jsx(fH,{})}),d.jsx(xt,{path:"/pizarra",element:d.jsx(pH,{})}),d.jsx(xt,{path:"/compartir",element:d.jsx(gH,{})}),d.jsx(xt,{path:"/temas",element:d.jsx(wH,{})}),d.jsx(xt,{path:"/finanzas",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/movimientos",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/sobres",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/stats",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/mas",element:d.jsx(FinanceModule,{})})]}),d.jsx(xt,{path:"*",element:d.jsx(_H,{})})]})}const SH=()=>d.jsx(mD,{client:bH,children:d.jsx(Z8,{children:d.jsx(e$,{children:d.jsxs($4,{children:[d.jsx(nO,{}),d.jsx($M,{}),d.jsx(cM,{children:d.jsx(TH,{})})]})})})}),UE=localStorage.getItem("rayan-theme");UE&&vH(UE);uC(document.getElementById("root")).render(d.jsx(SH,{}));
+  `,document.head.appendChild(e),localStorage.setItem("rayan-theme",t.name)}function vH(t){const e=Zk.find(n=>n.name===t);e&&eN(e)}const xH={hidden:{opacity:0},show:{opacity:1,transition:{staggerChildren:.06}}},FE={hidden:{opacity:0,y:16},show:{opacity:1,y:0,transition:{duration:.5,ease:[.22,1,.36,1]}}};function wH(){const[t,e]=b.useState(localStorage.getItem("rayan-theme")||"Por Defecto"),n=r=>{e(r.name),eN(r)};return d.jsxs(Y.div,{variants:xH,initial:"hidden",animate:"show",className:"space-y-6",children:[d.jsxs(Y.div,{variants:FE,children:[d.jsx("h1",{className:"page-header",children:"Temas"}),d.jsx("p",{className:"page-subtitle",children:"Personaliza los colores de tu app"})]}),d.jsxs(Y.div,{variants:FE,children:[d.jsx("p",{className:"section-label mb-3",children:"🎨 Temas Predefinidos"}),d.jsx("div",{className:"grid grid-cols-2 gap-2.5",children:Zk.map(r=>d.jsxs("button",{onClick:()=>n(r),className:`glass-card p-4 text-left relative transition-all ${t===r.name?"ring-2 ring-offset-1":""}`,children:[t===r.name&&d.jsx("div",{className:"absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center",style:{background:r.primary},children:d.jsx(H5,{className:"w-3 h-3 text-white"})}),d.jsxs("div",{className:"flex gap-1.5 mb-2",children:[d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.primary}}),d.jsx("div",{className:"w-5 h-5 rounded-full",style:{background:r.secondary}}),d.jsx("div",{className:"w-5 h-5 rounded-full border border-black/10",style:{background:`hsl(${r.bg})`}})]}),d.jsx("p",{className:"text-sm font-medium text-foreground",children:r.name}),t===r.name&&d.jsx("p",{className:"text-[10px] text-muted-foreground mt-0.5",children:"✓ Activo"})]},r.name))})]})]})}const _H=()=>{const t=ru();return b.useEffect(()=>{console.error("404 Error: User attempted to access non-existent route:",t.pathname)},[t.pathname]),d.jsx("div",{className:"flex min-h-screen items-center justify-center bg-muted",children:d.jsxs("div",{className:"text-center",children:[d.jsx("h1",{className:"mb-4 text-4xl font-bold",children:"404"}),d.jsx("p",{className:"mb-4 text-xl text-muted-foreground",children:"Oops! Page not found"}),d.jsx("a",{href:"/",className:"text-primary underline hover:text-primary/90",children:"Return to Home"})]})})},bH=new fD;function EH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):t?d.jsx(IW,{}):d.jsx(PC,{to:"/",replace:!0})}function TH(){const{user:t,loading:e}=ls();return e?d.jsx("div",{className:"min-h-screen flex items-center justify-center",children:d.jsx("div",{className:"w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"})}):d.jsxs(oM,{children:[d.jsx(xt,{path:"/",element:t?d.jsx(MebistiumRadialMenu,{}):d.jsx(AW,{})}),d.jsxs(xt,{element:d.jsx(EH,{}),children:[d.jsx(xt,{path:"/dashboard",element:d.jsx(NW,{})}),d.jsx(xt,{path:"/tasks",element:d.jsx(DW,{})}),d.jsx(xt,{path:"/schedule",element:d.jsx(OW,{})}),d.jsx(xt,{path:"/calendar",element:d.jsx(UW,{})}),d.jsx(xt,{path:"/grades",element:d.jsx($W,{})}),d.jsx(xt,{path:"/courses",element:d.jsx(BW,{})}),d.jsx(xt,{path:"/organizer",element:d.jsx(WW,{})}),d.jsx(xt,{path:"/settings",element:d.jsx(GW,{})}),d.jsx(xt,{path:"/classroom",element:d.jsx(lH,{})}),d.jsx(xt,{path:"/notes",element:d.jsx(XW,{})}),d.jsx(xt,{path:"/selectividad",element:d.jsx(fH,{})}),d.jsx(xt,{path:"/pizarra",element:d.jsx(pH,{})}),d.jsx(xt,{path:"/compartir",element:d.jsx(gH,{})}),d.jsx(xt,{path:"/temas",element:d.jsx(wH,{})}),d.jsx(xt,{path:"/finanzas",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/movimientos",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/sobres",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/stats",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/asistente",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/cuentas",element:d.jsx(FinanceModule,{})}),d.jsx(xt,{path:"/finanzas/mas",element:d.jsx(FinanceModule,{})})]}),d.jsx(xt,{path:"*",element:d.jsx(_H,{})})]})}const SH=()=>d.jsx(mD,{client:bH,children:d.jsx(Z8,{children:d.jsx(e$,{children:d.jsxs($4,{children:[d.jsx(nO,{}),d.jsx($M,{}),d.jsx(cM,{children:d.jsx(TH,{})})]})})})}),UE=localStorage.getItem("rayan-theme");UE&&vH(UE);uC(document.getElementById("root")).render(d.jsx(SH,{}));
