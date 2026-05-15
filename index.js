@@ -10190,6 +10190,151 @@ children: "Para añadir o editar una suscripción, abre el sobre correspondiente
 ],
 });
 }
+const APP_FONTS = [
+{ key: "default", name: "Inter (por defecto)", value: "", preview: "Inter, sans-serif", weight: 500 },
+{ key: "playfair", name: "Classic (Instagram)", value: "'Playfair Display', serif", preview: "'Playfair Display', serif", weight: 500 },
+{ key: "roboto", name: "Roboto", value: "'Roboto', sans-serif", preview: "'Roboto', sans-serif", weight: 500 },
+{ key: "instrument", name: "Instrument Serif", value: "'Instrument Serif', serif", preview: "'Instrument Serif', serif", weight: 400 },
+{ key: "quicksand", name: "Quicksand", value: "'Quicksand', sans-serif", preview: "'Quicksand', sans-serif", weight: 500 },
+{ key: "mono", name: "Space Mono", value: "'Space Mono', monospace", preview: "'Space Mono', monospace", weight: 400 },
+{ key: "caveat", name: "Caveat (manuscrita)", value: "'Caveat', cursive", preview: "'Caveat', cursive", weight: 500 },
+];
+function FontSelectorModal(o) {
+const [selected, setSelected] = b.useState(function() {
+try {
+const stored = localStorage.getItem("mb-app-font") || "";
+const match = APP_FONTS.find(function(f) { return f.value === stored; });
+return match ? match.key : "default";
+} catch (e) { return "default"; }
+});
+const applyFont = function(font) {
+try {
+if (font.value) {
+localStorage.setItem("mb-app-font", font.value);
+document.documentElement.style.setProperty("--app-font", font.value);
+} else {
+localStorage.removeItem("mb-app-font");
+document.documentElement.style.removeProperty("--app-font");
+}
+} catch (e) { console.error("apply font:", e); }
+setSelected(font.key);
+};
+return d.jsx("div", {
+onClick: o.onClose,
+style: {
+position: "fixed", inset: 0,
+background: "rgba(15,23,42,0.7)",
+backdropFilter: "blur(8px)",
+display: "flex", alignItems: "flex-end", justifyContent: "center",
+zIndex: 220,
+},
+children: d.jsxs(Y.div, {
+onClick: function(e) { e.stopPropagation(); },
+initial: { y: "100%" },
+animate: { y: 0 },
+style: {
+background: "white",
+borderTopLeftRadius: 24, borderTopRightRadius: 24,
+maxWidth: 520, width: "100%",
+maxHeight: "85vh",
+display: "flex", flexDirection: "column",
+boxShadow: "0 -24px 60px rgba(0,0,0,0.2)",
+},
+children: [
+d.jsxs("div", {
+style: { padding: "20px 20px 12px", flexShrink: 0 },
+children: [
+d.jsxs("div", {
+style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+children: [
+d.jsxs("h2", {
+style: {
+fontSize: 19, fontWeight: 700, color: "#0f172a", margin: 0,
+display: "flex", alignItems: "center", gap: 8,
+},
+children: [
+MIcon({ path: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>', size: 18, color: "#2563eb" }),
+"Fuente de la app",
+],
+}),
+d.jsx("button", {
+onClick: o.onClose,
+style: {
+width: 30, height: 30, borderRadius: 10, border: "none",
+background: "rgba(0,0,0,0.05)", cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+},
+children: MIcon({ path: ICONS.close, size: 14, color: "#64748b" }),
+}),
+],
+}),
+d.jsx("p", {
+style: { fontSize: 12, color: "#64748b", margin: 0, lineHeight: 1.5 },
+children: "Elige la fuente para toda la app. El cambio se guarda automáticamente.",
+}),
+],
+}),
+d.jsx("div", {
+style: { flex: 1, overflow: "auto", padding: "0 16px 16px" },
+children: d.jsx("div", {
+style: { display: "flex", flexDirection: "column", gap: 8 },
+children: APP_FONTS.map(function(font) {
+const isSelected = selected === font.key;
+return d.jsxs("button", {
+key: font.key,
+onClick: function() { applyFont(font); },
+style: {
+padding: "14px 16px",
+borderRadius: 14,
+border: isSelected ? "2px solid #2563eb" : "1px solid rgba(0,0,0,0.08)",
+background: isSelected ? "rgba(37,99,235,0.06)" : "white",
+cursor: "pointer",
+display: "flex", alignItems: "center", justifyContent: "space-between",
+textAlign: "left", width: "100%",
+boxSizing: "border-box",
+transition: "all 0.15s",
+},
+children: [
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: {
+fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+letterSpacing: 0.6, color: "#64748b", margin: "0 0 4px",
+},
+children: font.name,
+}),
+d.jsx("p", {
+style: {
+fontSize: 24,
+fontWeight: font.weight,
+color: "#0f172a", margin: 0,
+fontFamily: font.preview,
+lineHeight: 1.1,
+},
+children: "Aa Mebistium",
+}),
+],
+}),
+isSelected ? d.jsx("div", {
+style: {
+width: 26, height: 26, borderRadius: "50%",
+background: "#2563eb",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0, marginLeft: 8,
+},
+children: MIcon({ path: '<polyline points="20 6 9 17 4 12"/>', size: 14, color: "white" }),
+}) : null,
+],
+}, font.key);
+}),
+}),
+}),
+],
+}),
+});
+}
 function FinanceMorePage(o) {
 return d.jsxs("div", {
 style: { display: "flex", flexDirection: "column", gap: 16 },
@@ -10663,13 +10808,19 @@ children: o.mod.label,
 });
 }
 function CenterMenuModal(o) {
+const [showFontPicker, setShowFontPicker] = b.useState(false);
 const itemStyle = {
 width: "100%", padding: "12px 14px",
 border: "none", background: "transparent",
 borderRadius: 10, fontSize: 14, fontWeight: 500,
 color: "#334155", cursor: "pointer", textAlign: "left",
 };
-return d.jsxs("div", {
+return d.jsxs(d.Fragment, {
+children: [
+showFontPicker ? d.jsx(FontSelectorModal, {
+onClose: function() { setShowFontPicker(false); },
+}) : null,
+d.jsxs("div", {
 onClick: o.onClose,
 style: {
 position: "fixed", inset: 0,
@@ -10754,6 +10905,10 @@ onClick: function () { o.onClose(); o.navigate("/temas"); },
 style: itemStyle, children: "Temas",
 }),
 d.jsx("button", {
+onClick: function () { setShowFontPicker(true); },
+style: itemStyle, children: "Fuente",
+}),
+d.jsx("button", {
 onClick: function () {
 o.onClose();
 o.signOutUser().then(function () { o.navigate("/"); });
@@ -10763,10 +10918,12 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v21",
+children: "v22",
 }),
 ],
 }),
+}),
+],
 });
 }
 function VersionBadge() {
@@ -10788,7 +10945,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v21",
+children: "v22",
 });
 }
 
