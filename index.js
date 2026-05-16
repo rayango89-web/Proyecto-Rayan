@@ -11663,7 +11663,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v26",
+children: "v26.1",
 }),
 ],
 }),
@@ -11690,7 +11690,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v26",
+children: "v26.1",
 });
 }
 
