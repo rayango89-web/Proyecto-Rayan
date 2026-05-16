@@ -11327,7 +11327,6 @@ const navigate = gf();
 const { user, signOutUser } = ls();
 const [showCenterMenu, setShowCenterMenu] = b.useState(false);
 const [hoveredId, setHoveredId] = b.useState(null);
-const [flashDecks, setFlashDecks] = b.useState([]);
 const [rotation, setRotation] = b.useState(0);
 const containerRef = b.useRef(null);
 const dragStateRef = b.useRef(null);
@@ -11736,7 +11735,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v26.10",
+children: "v26.11",
 }),
 ],
 }),
@@ -11763,7 +11762,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v26.10",
+children: "v26.11",
 });
 }
 
