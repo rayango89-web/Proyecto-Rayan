@@ -10442,7 +10442,7 @@ maxOutputTokens: 8192,
 },
 };
 const res = await fetch(
-"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey,
+"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=" + apiKey,
 { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
 );
 if (!res.ok) {
@@ -11672,7 +11672,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v26.4",
+children: "v26.5",
 }),
 ],
 }),
@@ -11699,7 +11699,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v26.4",
+children: "v26.5",
 });
 }
 
