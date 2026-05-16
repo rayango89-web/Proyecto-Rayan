@@ -10335,6 +10335,76 @@ children: MIcon({ path: '<polyline points="20 6 9 17 4 12"/>', size: 14, color: 
 }),
 });
 }
+function UpdateBanner() {
+const [show, setShow] = b.useState(false);
+b.useEffect(function() {
+if (!("serviceWorker" in navigator)) return;
+const handler = function(e) {
+if (e.data && e.data.type === "NEW_VERSION_AVAILABLE") {
+setShow(true);
+}
+};
+navigator.serviceWorker.addEventListener("message", handler);
+return function() {
+navigator.serviceWorker.removeEventListener("message", handler);
+};
+}, []);
+if (!show) return null;
+return d.jsxs(Y.div, {
+initial: { y: -60, opacity: 0 },
+animate: { y: 0, opacity: 1 },
+transition: { type: "spring", damping: 20, stiffness: 300 },
+style: {
+position: "fixed",
+top: "max(12px, env(safe-area-inset-top, 12px))",
+left: "50%",
+transform: "translateX(-50%)",
+zIndex: 9999,
+background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
+color: "white",
+borderRadius: 14,
+padding: "10px 16px",
+display: "flex", alignItems: "center", gap: 10,
+boxShadow: "0 8px 32px rgba(37,99,235,0.4)",
+maxWidth: "calc(100vw - 32px)",
+whiteSpace: "nowrap",
+},
+children: [
+d.jsx("div", {
+style: {
+width: 28, height: 28, borderRadius: "50%",
+background: "rgba(255,255,255,0.15)",
+display: "flex", alignItems: "center", justifyContent: "center",
+flexShrink: 0,
+},
+children: MIcon({ path: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.63"/>', size: 14, color: "white" }),
+}),
+d.jsxs("div", {
+style: { flex: 1, minWidth: 0 },
+children: [
+d.jsx("p", {
+style: { fontSize: 13, fontWeight: 700, margin: 0 },
+children: "Nueva versión disponible",
+}),
+d.jsx("p", {
+style: { fontSize: 10, margin: 0, opacity: 0.8 },
+children: "Pulsa para actualizar Mebistium",
+}),
+],
+}),
+d.jsx("button", {
+onClick: function() { window.location.reload(); },
+style: {
+padding: "6px 14px", borderRadius: 8,
+background: "white", color: "#2563eb",
+border: "none", fontSize: 12, fontWeight: 700,
+cursor: "pointer", flexShrink: 0,
+},
+children: "Actualizar",
+}),
+],
+});
+}
 function FinanceMorePage(o) {
 return d.jsxs("div", {
 style: { display: "flex", flexDirection: "column", gap: 16 },
@@ -10733,6 +10803,7 @@ user: user, navigate: navigate, signOutUser: signOutUser,
 onClose: function () { setShowCenterMenu(false); },
 }) : null,
 d.jsx(VersionBadge, {}),
+d.jsx(UpdateBanner, {}),
 ],
 });
 }
@@ -10820,7 +10891,7 @@ children: [
 showFontPicker ? d.jsx(FontSelectorModal, {
 onClose: function() { setShowFontPicker(false); },
 }) : null,
-d.jsxs("div", {
+d.jsx("div", {
 onClick: o.onClose,
 style: {
 position: "fixed", inset: 0,
@@ -10830,7 +10901,7 @@ display: "flex", alignItems: "center", justifyContent: "center",
 zIndex: 100, padding: 16,
 },
 children: d.jsxs(Y.div, {
-onClick: function (e) { e.stopPropagation(); },
+onClick: function(e) { e.stopPropagation(); },
 initial: { scale: 0.85, opacity: 0 },
 animate: { scale: 1, opacity: 1 },
 transition: { type: "spring", damping: 22, stiffness: 280 },
@@ -10841,27 +10912,6 @@ maxWidth: 320, width: "100%",
 boxShadow: "0 24px 60px rgba(0,0,0,0.3)",
 },
 children: [
-d.jsxs("div", {
-style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-children: [
-d.jsx("h2", {
-style: {
-fontSize: 18, fontWeight: 700, color: "#0f172a",
-fontFamily: "'Instrument Serif', serif", margin: 0,
-},
-children: "Mebistium",
-}),
-d.jsx("button", {
-onClick: o.onClose,
-style: {
-width: 32, height: 32, borderRadius: 10, border: "none",
-background: "rgba(0,0,0,0.05)", cursor: "pointer",
-display: "flex", alignItems: "center", justifyContent: "center",
-},
-children: d.jsx(er, { size: 16, color: "#64748b" }),
-}),
-],
-}),
 o.user ? d.jsxs("div", {
 style: {
 display: "flex", alignItems: "center", gap: 12,
@@ -10877,19 +10927,21 @@ style: {
 width: 44, height: 44, borderRadius: "50%",
 background: "#2563eb",
 display: "flex", alignItems: "center", justifyContent: "center",
-color: "white", fontWeight: 700, fontSize: 18,
+color: "white", fontWeight: 700,
 },
-children: (o.user.displayName || o.user.email || "U")[0].toUpperCase(),
+children: (o.user.displayName || o.user.email || "?")[0].toUpperCase(),
 }),
 d.jsxs("div", {
 style: { flex: 1, minWidth: 0 },
 children: [
 d.jsx("p", {
-style: { fontSize: 14, fontWeight: 600, color: "#0f172a", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+style: { fontSize: 14, fontWeight: 600, color: "#0f172a", margin: 0,
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 children: o.user.displayName || "Usuario",
 }),
 d.jsx("p", {
-style: { fontSize: 12, color: "#64748b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+style: { fontSize: 11, color: "#64748b", margin: "2px 0 0",
+overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 children: o.user.email,
 }),
 ],
@@ -10897,28 +10949,28 @@ children: o.user.email,
 ],
 }) : null,
 d.jsx("button", {
-onClick: function () { o.onClose(); o.navigate("/settings"); },
+onClick: function() { o.onClose(); o.navigate("/settings"); },
 style: itemStyle, children: "Ajustes",
 }),
 d.jsx("button", {
-onClick: function () { o.onClose(); o.navigate("/temas"); },
+onClick: function() { o.onClose(); o.navigate("/temas"); },
 style: itemStyle, children: "Temas",
 }),
 d.jsx("button", {
-onClick: function () { setShowFontPicker(true); },
+onClick: function() { setShowFontPicker(true); },
 style: itemStyle, children: "Fuente",
 }),
 d.jsx("button", {
-onClick: function () {
+onClick: function() {
 o.onClose();
-o.signOutUser().then(function () { o.navigate("/"); });
+o.signOutUser().then(function() { o.navigate("/"); });
 },
 style: Object.assign({}, itemStyle, { color: "#dc2626" }),
 children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v23",
+children: "v24",
 }),
 ],
 }),
@@ -10945,7 +10997,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v23",
+children: "v24",
 });
 }
 
