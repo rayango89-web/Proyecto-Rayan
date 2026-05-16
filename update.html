@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Actualizando Mebistium...</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+      background: linear-gradient(135deg, #dbeafe, #e0f2fe);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 24px;
+      padding: 40px 32px;
+      max-width: 380px;
+      width: 100%;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.12);
+      text-align: center;
+    }
+    .logo {
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, #2563eb, #38bdf8);
+      border-radius: 20px;
+      margin: 0 auto 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 900;
+      color: white;
+    }
+    h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+    p { font-size: 14px; color: #64748b; line-height: 1.6; margin-bottom: 24px; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e2e8f0;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      margin: 0 auto 20px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status {
+      font-size: 13px;
+      color: #2563eb;
+      font-weight: 600;
+      min-height: 20px;
+    }
+    .done { display: none; }
+    .done.visible { display: block; }
+    .btn {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 8px 24px rgba(37,99,235,0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">M</div>
+    <h1>Actualizando Mebistium</h1>
+    <p>Limpiando la versión antigua...<br>Solo tarda unos segundos.</p>
+    <div class="spinner" id="spinner"></div>
+    <div class="status" id="status">Borrando caché...</div>
+    <div class="done" id="done">
+      <p style="color: #059669; font-weight: 600; font-size: 15px;">✅ ¡Listo! Ya tienes la versión más nueva.</p>
+      <a href="./index.html" class="btn">Abrir Mebistium</a>
+    </div>
+  </div>
+
+  <script>
+    async function clearAndUpdate() {
+      const status = document.getElementById('status');
+      const spinner = document.getElementById('spinner');
+      const done = document.getElementById('done');
+
+      try {
+        // 1. Borrar todos los caches
+        status.textContent = 'Borrando caché...';
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+
+        // 2. Desregistrar service workers
+        status.textContent = 'Actualizando service worker...';
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+
+        // 3. Listo
+        status.textContent = '¡Actualización completada!';
+        spinner.style.display = 'none';
+        done.classList.add('visible');
+
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        // Intentar redirigir de todas formas
+        setTimeout(() => { window.location.href = './index.html'; }, 2000);
+      }
+    }
+
+    clearAndUpdate();
+  </script>
+</body>
+</html>
