@@ -10408,12 +10408,21 @@ children: "Actualizar",
 async function getGeminiKey() {
 try {
 const url = "https://firestore.googleapis.com/v1/projects/proyectorayan/databases/(default)/documents/config/gemini";
+console.log("[Gemini] Fetching key from Firestore...");
 const res = await fetch(url);
-if (!res.ok) return null;
+console.log("[Gemini] Response status:", res.status);
+if (!res.ok) {
+const errText = await res.text();
+console.error("[Gemini] Firestore error:", errText);
+return null;
+}
 const data = await res.json();
-return data.fields && data.fields.apiKey ? data.fields.apiKey.stringValue : null;
+console.log("[Gemini] Data fields:", JSON.stringify(Object.keys(data.fields || {})));
+const key = data.fields && (data.fields.apiKey || data.fields["apiKey "]) ? (data.fields.apiKey || data.fields["apiKey "]).stringValue : null;
+console.log("[Gemini] Key found:", key ? "YES (length=" + key.length + ")" : "NO");
+return key;
 } catch (e) {
-console.error("getGeminiKey:", e);
+console.error("[Gemini] getGeminiKey exception:", e);
 return null;
 }
 }
@@ -10433,7 +10442,7 @@ maxOutputTokens: 8192,
 },
 };
 const res = await fetch(
-"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey,
+"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey,
 { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
 );
 if (!res.ok) {
@@ -11663,7 +11672,7 @@ children: "Cerrar sesión",
 }),
 d.jsx("p", {
 style: { fontSize: 11, color: "#94a3b8", textAlign: "center", marginTop: 16 },
-children: "v26.1",
+children: "v26.4",
 }),
 ],
 }),
@@ -11690,7 +11699,7 @@ fontFamily: "ui-monospace, SFMono-Regular, monospace",
 pointerEvents: "none",
 userSelect: "none",
 },
-children: "v26.1",
+children: "v26.4",
 });
 }
 
